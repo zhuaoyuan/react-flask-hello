@@ -6,6 +6,8 @@ from api.models import db, User, ProjectInfo
 from api.utils import generate_sitemap, APIException
 from api.enum.error_code import ErrorCode
 from flask_cors import CORS
+from datetime import datetime
+
 
 api = Blueprint('api', __name__)
 
@@ -112,3 +114,42 @@ def bulk_add_projects():
         return success_response()
     else:
         return error_response(ErrorCode.PROJECTS_ALL_EXISTED)
+
+@api.route('/project/edit', methods=['POST'])
+def edit_project():
+    data = request.json
+    id = data.get('id')
+    project = ProjectInfo.query.get(id)
+    if not project:
+        return error_response(ErrorCode.PROJECT_NOT_FOUND)
+    
+
+
+    project.project_name = data.get('project_name', project.project_name)
+    project.customer_name = data.get('customer_name', project.customer_name)
+    project.start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
+    project.end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
+    project.project_description = data.get('project_description', project.project_description)
+    
+    try:
+        db.session.commit()
+        return success_response(project.to_dict())
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR)
+
+@api.route('/project/delete', methods=['POST'])
+def delete_project():
+    data = request.json
+    id = data.get('id')
+    project = ProjectInfo.query.get(id)
+    if not project:
+        return error_response(ErrorCode.PROJECT_NOT_FOUND)
+    
+    try:
+        db.session.delete(project)
+        db.session.commit()
+        return success_response()
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR)

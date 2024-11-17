@@ -9,6 +9,7 @@ class ErrorCode:
 
     # 项目
     PROJECTS_ALL_EXISTED = {'code': 2001, 'message': '项目均已存在'}
+    PROJECT_NOT_FOUND = {'code': 2002, 'message': '项目不存在'}
 
 
     # 可以继续添加其他错误码和描述

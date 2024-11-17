@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Table, Space, message, Upload } from 'antd';
+import { Form, Input, Button, Table, Space, message, Upload, Modal, DatePicker } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
@@ -7,6 +7,8 @@ import { responseHandler } from '../component/responseHandler';
 import FileSaver from 'file-saver';
 import * as XLSX from 'xlsx';
 import { UploadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -60,10 +62,8 @@ const ExcelUploader = () => {
 			// 发送数据到后端
 			axios.post(`${backendUrl}/api/project/upload`, { upload_list: records })
 				.then(response => {
-					console.log(`handleFileChange response=${JSON.stringify(response)}`)
 					responseHandler(response.data, () => {
 						message.success('数据上传成功');
-
 					});
 				})
 				.catch(error => {
@@ -94,10 +94,15 @@ const ExcelUploader = () => {
 
 
 export const Project = () => {
-	const [form] = Form.useForm();
+	const [queryForm] = Form.useForm();
+	const [editForm] = Form.useForm();
+
 	const [data, setData] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+	const [confirmDelete, setConfirmDelete] = useState({ open: false, id: null });
+	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [editData, setEditData] = useState(null);
 
 	const fetchData = async (params = {}) => {
 		setLoading(true);
@@ -137,31 +142,6 @@ export const Project = () => {
 		});
 	};
 
-	const handleUpload = async () => {
-		if (!file) {
-			alert('请选择一个文件');
-			return;
-		}
-		const reader = new FileReader();
-		reader.onload = (e) => {
-			const data = e.target.result;
-			const workbook = XLSX.read(data, { type: 'binary' });
-			const sheetName = workbook.SheetNames[0];
-			const sheet = workbook.Sheets[sheetName];
-			const jsonData = XLSX.utils.sheet_to_json(sheet);
-
-			// 发送数据至后端
-			axios.post('/api/upload', jsonData)
-				.then(response => {
-					console.log('上传成功', response);
-				})
-				.catch(error => {
-					console.error('上传失败', error);
-				});
-		};
-		reader.readAsBinaryString(file);
-	};
-
 	const downloadExcelTemplate = () => {
 		// 创建工作簿
 		const wb = XLSX.utils.book_new();
@@ -173,6 +153,77 @@ export const Project = () => {
 		const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
 		// 使用FileSaver保存文件
 		FileSaver.saveAs(new Blob([s2ab(wbout)], { type: 'application/octet-stream' }), '项目模板.xlsx');
+	};
+
+	const handleDelete = (id) => {
+		setConfirmDelete({ open: true, id });
+	};
+
+	const handleDeleteConfirm = () => {
+		axios.post(`${backendUrl}/api/project/delete`, { id: confirmDelete.id })
+			.then(response => {
+				responseHandler(response.data, () => {
+					message.success('删除成功');
+				});
+				fetchData({
+					pagination: { ...pagination },
+				}); // 重新获取数据以更新表格
+			})
+			.catch(error => {
+				message.error('删除失败');
+				console.error(error);
+			})
+			.finally(() => {
+				setConfirmDelete({ open: false, id: null });
+			});
+	};
+
+	const handleDeleteCancel = () => {
+		setConfirmDelete({ open: false, id: null });
+	};
+
+	const handleEdit = (id) => {
+		const project = data.find(item => item.id === id);
+
+		if (project) {
+			editForm.setFieldsValue({ 
+				...project,
+				start_date: dayjs(project.start_date), 
+				end_date: dayjs(project.end_date) 
+			});
+			setEditData(project);
+
+			setIsModalOpen(true);
+		}
+	};
+
+	const handleCancel = () => {
+		setIsModalOpen(false);
+		setEditData(null);
+		editForm.resetFields();
+	};
+
+	const handleEditSubmit = async (values) => {
+		try {
+			const response = await axios.post(`${backendUrl}/api/project/edit`, {
+				...editData,
+				...values,
+				start_date: values.start_date.format('YYYY-MM-DD'),
+				end_date: values.end_date.format('YYYY-MM-DD'),
+			});
+			responseHandler(response.data, () => {
+				message.success('编辑成功');
+			});
+			setIsModalOpen(false);
+			setEditData(null);
+			editForm.resetFields();
+			fetchData({
+				pagination: { ...pagination },
+			}); // 重新获取数据以更新表格
+		} catch (error) {
+			message.error('编辑失败');
+			console.error(error);
+		}
 	};
 
 	const s2ab = (s) => {
@@ -216,8 +267,8 @@ export const Project = () => {
 			key: 'action',
 			render: (_, record) => (
 				<Space size="middle">
-					<a>编辑</a>
-					<a>删除</a>
+					<a onClick={() => handleEdit(record.id)}>编辑</a>
+					<a onClick={() => handleDelete(record.id)}>删除</a>
 					<a>查看价格表</a>
 				</Space>
 			),
@@ -227,7 +278,7 @@ export const Project = () => {
 	return (
 		<div>
 			<Form
-				form={form}
+				form={queryForm}
 				layout="vertical"
 				onFinish={fetchData}
 				initialValues={{ name: '', status: '' }}
@@ -260,6 +311,51 @@ export const Project = () => {
 				pagination={pagination}
 				onChange={handleTableChange}
 			/>
+			<Modal
+				title="确认删除"
+				open={confirmDelete.open}
+				onOk={handleDeleteConfirm}
+				onCancel={handleDeleteCancel}
+				okText='确认'
+				cancelText='取消'
+			>
+				<p>确定要删除这个项目吗？</p>
+			</Modal>
+			<Modal
+				title="编辑项目"
+				open={isModalOpen}
+				onOk={() => {
+					editForm.submit();
+				}}
+				onCancel={handleCancel}
+			>
+				<Form
+					form={editForm}
+					layout="vertical"
+					initialValues={{
+						...editData, 
+						start_date: editData ? dayjs(editData.start_date) : dayjs('2024-01-01'), 
+						end_date: editData ? dayjs(editData.end_date) : dayjs('2024-01-01')
+					}}
+					onFinish={handleEditSubmit}
+				>
+					<Form.Item label="项目名称" name="project_name">
+						<Input />
+					</Form.Item>
+					<Form.Item label="客户名称" name="customer_name">
+						<Input />
+					</Form.Item>
+					<Form.Item label="合作起始时间" name="start_date">
+						<DatePicker />
+					</Form.Item>
+					<Form.Item label="合作结束时间" name="end_date">
+						<DatePicker />
+					</Form.Item>
+					<Form.Item label="项目描述" name="project_description">
+						<Input.TextArea />
+					</Form.Item>
+				</Form>
+			</Modal>
 		</div>
 	);
 };

@@ -30,3 +30,13 @@ class ProjectInfo(db.Model):
 
     def __repr__(self):
         return f'<ProjectInfo {self.project_name}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_name': self.project_name,
+            'customer_name': self.customer_name,
+            'start_date': self.start_date,
+            'end_date': self.end_date,
+            'project_description': self.project_description
+        }
