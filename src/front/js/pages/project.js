@@ -96,6 +96,7 @@ const ExcelUploader = () => {
 export const Project = () => {
 	const [queryForm] = Form.useForm();
 	const [editForm] = Form.useForm();
+	const [searchQuery, setSearchQuery] = useState('');
 
 	const [data, setData] = useState([]);
 	const [loading, setLoading] = useState(false);
@@ -109,6 +110,7 @@ export const Project = () => {
 		try {
 
 			const response = await axios.post(`${backendUrl}/api/project/list`, {
+				search_query: searchQuery,
 				page: params.pagination.current || 1,
 				per_page: params.pagination.pageSize || 10,
 			});
@@ -186,10 +188,10 @@ export const Project = () => {
 		const project = data.find(item => item.id === id);
 
 		if (project) {
-			editForm.setFieldsValue({ 
+			editForm.setFieldsValue({
 				...project,
-				start_date: dayjs(project.start_date), 
-				end_date: dayjs(project.end_date) 
+				start_date: dayjs(project.start_date),
+				end_date: dayjs(project.end_date)
 			});
 			setEditData(project);
 
@@ -281,13 +283,14 @@ export const Project = () => {
 				form={queryForm}
 				layout="vertical"
 				onFinish={fetchData}
-				initialValues={{ name: '', status: '' }}
+				initialValues={{ name: '' }}
 			>
-				<Form.Item label="项目名称" name="name">
-					<Input />
-				</Form.Item>
-				<Form.Item label="状态" name="status">
-					<Input />
+				<Form.Item label="搜索" name="search">
+					<Input
+						placeholder="输入搜索关键词"
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+					/>
 				</Form.Item>
 				<Form.Item>
 					<Space>
@@ -333,8 +336,8 @@ export const Project = () => {
 					form={editForm}
 					layout="vertical"
 					initialValues={{
-						...editData, 
-						start_date: editData ? dayjs(editData.start_date) : dayjs('2024-01-01'), 
+						...editData,
+						start_date: editData ? dayjs(editData.start_date) : dayjs('2024-01-01'),
 						end_date: editData ? dayjs(editData.end_date) : dayjs('2024-01-01')
 					}}
 					onFinish={handleEditSubmit}
