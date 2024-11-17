@@ -72,7 +72,7 @@ dist/*
 !.htaccess
 !.eslintrc
 !.env.example
-!.env
+.env
 .now
 
 # backend stuff
