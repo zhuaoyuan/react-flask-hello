@@ -6,7 +6,7 @@ import { Context } from "../store/appContext";
 import { responseHandler } from '../component/responseHandler';
 import FileSaver from 'file-saver';
 import * as XLSX from 'xlsx';
-import { UploadOutlined, SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { UploadOutlined, SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -312,8 +312,7 @@ export const Project = () => {
 	return (
 		<div style={{ padding: '24px' }}>
 			<Card>
-				<Title level={2} style={{ marginBottom: '24px' }}>项目管理</Title>
-				
+
 				<Form
 					form={queryForm}
 					layout="vertical"

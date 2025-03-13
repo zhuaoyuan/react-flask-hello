@@ -2,7 +2,7 @@ import React from "react";
 import { BrowserRouter, Route, Routes, Link, useLocation } from "react-router-dom";
 import ScrollToTop from "./component/scrollToTop";
 import { BackendURL } from "./component/backendURL";
-import { Layout, Menu } from 'antd';
+import { Layout, Menu, Typography } from 'antd';
 import {
   ProjectOutlined,
   ShoppingCartOutlined,
@@ -19,11 +19,25 @@ import injectContext from "./store/appContext";
 import { Footer } from "./component/footer";
 
 const { Header, Sider, Content } = Layout;
+const { Title } = Typography;
 
 const MainLayout = () => {
     const location = useLocation();
 
     if(!process.env.BACKEND_URL || process.env.BACKEND_URL == "") return <BackendURL />;
+
+    const getPageTitle = () => {
+        switch(location.pathname) {
+            case '/project':
+                return '项目管理';
+            case '/order':
+                return '订单管理';
+            case '/delivery':
+                return '送货管理';
+            default:
+                return '首页';
+        }
+    };
 
     const menuItems = [
         {
@@ -46,7 +60,16 @@ const MainLayout = () => {
     return (
         <Layout style={{ minHeight: '100vh' }}>
             <Sider width={200} theme="light">
-                <div style={{ height: 32, margin: 16, background: 'rgba(0, 0, 0, 0.2)' }} />
+                <div style={{ 
+                    height: 32, 
+                    margin: 16, 
+                    display: 'flex',
+                    color: '#000',
+                    fontSize: '20px',
+                    fontWeight: 'bold'
+                }}>
+                    物流项目管理
+                </div>
                 <Menu
                     mode="inline"
                     selectedKeys={[location.pathname]}
@@ -55,7 +78,15 @@ const MainLayout = () => {
                 />
             </Sider>
             <Layout>
-                <Header style={{ padding: 0, background: '#fff' }} />
+                <Header style={{ 
+                    padding: '0 24px', 
+                    background: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderBottom: '1px solid #f0f0f0'
+                }}>
+                    <Title level={4} style={{ margin: 0 }}>{getPageTitle()}</Title>
+                </Header>
                 <Content style={{ background: '#fff' }}>
                     <Routes>
                         <Route element={<Home />} path="/" />
