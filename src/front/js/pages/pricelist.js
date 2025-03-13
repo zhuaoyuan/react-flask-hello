@@ -8,90 +8,116 @@ import FileSaver from 'file-saver';
 import * as XLSX from 'xlsx';
 import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-
+import 'antd/dist/antd.css'; // 引入Ant Design样式
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
 const ExcelUploader = () => {
-	const [file, setFile] = React.useState(null);
+    const [file, setFile] = useState(null);
 
-	function convertExcelDate(serial) {
-		const baseDate = new Date(1899, 11, 31); // 注意：月份是从0开始的，所以11代表12月
-		const date = new Date(baseDate);
-		date.setUTCDate(date.getUTCDate() + serial);
-		return date.toISOString().split('T')[0]; // 返回格式如 '2024-01-01'
-	}
+    function convertExcelDate(serial) {
+        const baseDate = new Date(1899, 11, 31); // 注意：月份是从0开始的，所以11代表12月
+        const date = new Date(baseDate);
+        date.setUTCDate(date.getUTCDate() + serial);
+        return date.toISOString().split('T')[0]; // 返回格式如 '2024-01-01'
+    }
 
-	const handleFileChange = info => {
-		console.log('File change info.file:', JSON.stringify(info.file)); // 调试信息
-		console.log('File change info:', JSON.stringify(info)); // 调试信息
+    const handleFileChange = info => {
+        console.log('File change info.file:', JSON.stringify(info.file)); // 调试信息
+        console.log('File change info:', JSON.stringify(info)); // 调试信息
 
-		console.log('file.status'); // 调试信息
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = e.target.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-		const headerMap = {
-			'项目名称': 'project_name',
-			'客户名称': 'customer_name',
-			'合作起始时间': 'start_date',
-			'合作结束时间': 'end_date',
-			'项目描述': 'project_description'
-		}
-		const reader = new FileReader();
-		reader.onload = (e) => {
-			const data = e.target.result;
-			const workbook = XLSX.read(data, { type: 'binary' });
-			const sheetName = workbook.SheetNames[0];
-			const worksheet = workbook.Sheets[sheetName];
-			const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            // 提取表头
+            const headers = jsonData[0];
+            const records = jsonData.slice(1).map(row => {
+                return headers.reduce((obj, header, index) => {
+                    const key = headerMap[header];
+                    if (key) {
+                        if (key === 'tonnage_range') {
+                            obj[key] = [parseFloat(row[index][0]) || 0, parseFloat(row[index][1]) || 0]; // 假设吨位区间是两个数值
+                        } else if (['price_per_unit'].includes(key)) {
+                            obj[key] = parseFloat(row[index]) || 0; // 确保数值类型，并处理可能的空值
+                        } else {
+                            obj[key] = row[index];
+                        }
+                    }
+                    return obj;
+                }, {});
+            });
 
-			// 提取表头
-			const headers = jsonData[0];
-			const records = jsonData.slice(1).map(row => {
-				return headers.reduce((obj, header, index) => {
-					header = headerMap[header];
-					if (header === 'start_date' || header === 'end_date') {
-						obj[header] = convertExcelDate(row[index]);
-					} else {
-						obj[header] = row[index];
-					}
-					return obj;
-				}, {});
-			});
+            console.log(`handleFileChange records=${JSON.stringify(records)}`);
 
-			console.log(`handleFileChange records=${JSON.stringify(records)}`)
+            // 发送数据到后端
+            axios.post(`${backendUrl}/api/project/upload`, { upload_list: records })
+                .then(response => {
+                    responseHandler(response.data, () => {
+                        message.success('数据上传成功');
+                    });
+                })
+                .catch(error => {
+                    message.error('数据上传失败');
+                    console.error('Error uploading data:', error);
+                });
+        };
+        reader.readAsBinaryString(info.file);
+    };
 
-			// 发送数据到后端
-			axios.post(`${backendUrl}/api/project/upload`, { upload_list: records })
-				.then(response => {
-					responseHandler(response.data, () => {
-						message.success('数据上传成功');
-					});
-				})
-				.catch(error => {
-					message.error('数据上传失败');
-					console.error('Error uploading data:', error);
-				});
-		};
-		reader.readAsBinaryString(info.file);
-	};
+    const beforeUpload = info => {
+        setFile(info.file);
+        return false; // 禁止默认上传行为
+    };
 
-	const beforeUpload = info => {
-		setFile(info.file);
-		return false; // 禁止默认上传行为
-	};
+    const headerMap = {
+        '出发地': 'origin',
+        '到达省': 'destination_province',
+        '到达市': 'destination_city',
+        '承运类型': 'transport_type',
+        '吨位区间': 'tonnage_range',
+        '单价': 'price_per_unit'
+    };
 
-	return (
-		<Upload
-			name="file"
-			accept=".xlsx,.xls"
-			beforeUpload={beforeUpload}
-			onChange={handleFileChange}
-			showUploadList={false}/*  */
-		>
-			<Button icon={<UploadOutlined />} type="primary">批量导入</Button>
-		</Upload>
-	);
+    return (
+        <Upload
+            name="file"
+            accept=".xlsx,.xls"
+            beforeUpload={beforeUpload}
+            onChange={handleFileChange}
+            showUploadList={false}
+        >
+            <Button icon={<UploadOutlined />} type="primary">批量导入</Button>
+        </Upload>
+    );
 };
 
+import { DatePicker } from 'antd';
+import 'antd/dist/antd.css'; // 引入Ant Design样式
+
+const { RangePicker } = DatePicker;
+
+
+    return (
+        <div>
+            <RangePicker />
+            <Upload
+                name="file"
+                accept=".xlsx,.xls"
+                beforeUpload={beforeUpload}
+                onChange={handleFileChange}
+                showUploadList={false}
+            >
+                <Button icon={<UploadOutlined />} type="primary">批量导入</Button>
+            </Upload>
+        </div>
+    );
+
+export default ExcelUploader;
 
 export const Project = () => {
 	const [queryForm] = Form.useForm();

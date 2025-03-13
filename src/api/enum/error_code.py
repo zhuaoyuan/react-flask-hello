@@ -7,7 +7,7 @@ class ErrorCode:
     INTERNAL_SERVER_ERROR = {'code': 1001, 'message': '服务器内部错误'}
 
 
-    # 项目
+    # 项目相关
     PROJECTS_ALL_EXISTED = {'code': 2001, 'message': '项目均已存在'}
     PROJECT_NOT_FOUND = {'code': 2002, 'message': '项目不存在'}
 

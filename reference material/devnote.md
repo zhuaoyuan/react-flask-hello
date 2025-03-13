@@ -16,3 +16,5 @@ postman
 # 查看数据库
 dbeaver > mydatabase > 数据库 > mydatabase > 表 
 可以查看数据和表结构
+双击选中mydatabase F3打开sql编辑器，贴入dml（修改数据）或ddl（修改表结构）语句。左侧小三角形执行sql
+

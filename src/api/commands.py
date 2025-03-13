@@ -1,23 +1,30 @@
+"""
+命令行工具模块
+此模块提供了一系列自定义的Flask CLI命令，用于执行各种管理任务
+例如：数据库初始化、测试数据导入等
+
+您可以使用@app.cli.command装饰器添加任意数量的命令
+这些命令可用于执行定时任务或在API之外但仍需要与数据库集成的任务
+"""
 
 import click
 from api.models import db, User
 
-"""
-In this file, you can add as many commands as you want using the @app.cli.command decorator
-Flask commands are usefull to run cronjobs or tasks outside of the API but sill in integration 
-with youy database, for example: Import the price of bitcoin every night as 12am
-"""
 def setup_commands(app):
-    
-    """ 
-    This is an example command "insert-test-users" that you can run from the command line
-    by typing: $ flask insert-test-users 5
-    Note: 5 is the number of users to add
     """
-    @app.cli.command("insert-test-users") # name of our command
-    @click.argument("count") # argument of out command
+    设置命令行工具
+    :param app: Flask应用实例
+    """
+    
+    @app.cli.command("insert-test-users") # 命令名称
+    @click.argument("count") # 命令参数
     def insert_test_users(count):
-        print("Creating test users")
+        """
+        插入测试用户数据
+        使用方法: $ flask insert-test-users 5
+        :param count: 要创建的测试用户数量
+        """
+        print("开始创建测试用户")
         for x in range(1, int(count) + 1):
             user = User()
             user.email = "test_user" + str(x) + "@test.com"
@@ -25,10 +32,14 @@ def setup_commands(app):
             # user.is_active = True
             db.session.add(user)
             db.session.commit()
-            print("User: ", user.email, " created.")
+            print("用户已创建: ", user.email)
 
-        print("All test users created")
+        print("所有测试用户创建完成")
 
     @app.cli.command("insert-test-data")
     def insert_test_data():
+        """
+        插入测试数据
+        此函数预留用于插入其他类型的测试数据
+        """
         pass
