@@ -1,16 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table } from 'antd';
+import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
 import { responseHandler } from '../component/responseHandler';
-import { SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
+import { SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
+import { provinces_and_cities } from '../data/provinces_and_cities';
 
 const { TextArea } = Input;
 const { Meta } = Card;
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+const TRANSPORT_TYPES = ['整车运输', '零担运输'];
+
+// 校验价格配置数据
+const validatePriceData = (data) => {
+	const errors = [];
+	const uniqueKeys = new Set();
+
+	data.forEach((item, index) => {
+		// 校验省市是否存在
+		if (!provinces_and_cities[item.departure_province]) {
+			errors.push(`第 ${index + 1} 行：出发省 "${item.departure_province}" 不存在`);
+		} else if (!provinces_and_cities[item.departure_province].includes(item.departure_city)) {
+			errors.push(`第 ${index + 1} 行：出发市 "${item.departure_city}" 不是 ${item.departure_province} 的城市`);
+		}
+
+		if (!provinces_and_cities[item.destination_province]) {
+			errors.push(`第 ${index + 1} 行：到达省 "${item.destination_province}" 不存在`);
+		} else if (!provinces_and_cities[item.destination_province].includes(item.destination_city)) {
+			errors.push(`第 ${index + 1} 行：到达市 "${item.destination_city}" 不是 ${item.destination_province} 的城市`);
+		}
+
+		// 校验承运类型
+		if (!TRANSPORT_TYPES.includes(item.transport_type)) {
+			errors.push(`第 ${index + 1} 行：承运类型必须是 "整车运输" 或 "零担运输"`);
+		}
+
+		// 校验唯一性
+		const key = `${item.departure_province}-${item.departure_city}-${item.destination_province}-${item.destination_city}`;
+		if (uniqueKeys.has(key)) {
+			errors.push(`第 ${index + 1} 行：出发地-到达地组合重复`);
+		}
+		uniqueKeys.add(key);
+
+		// 校验价格
+		if (typeof item.price !== 'number' || item.price <= 0) {
+			errors.push(`第 ${index + 1} 行：价格必须是大于0的数字`);
+		}
+	});
+
+	return errors;
+};
 
 export const Project = () => {
 	const [queryForm] = Form.useForm();
@@ -25,6 +69,11 @@ export const Project = () => {
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [editData, setEditData] = useState(null);
 	const [priceTableData, setPriceTableData] = useState([]);
+	const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+	const [currentProject, setCurrentProject] = useState(null);
+	const [priceLoading, setPriceLoading] = useState(false);
+	const [pricePagination, setPricePagination] = useState({ current: 1, pageSize: 10, total: 0 });
+	const [priceList, setPriceList] = useState([]);
 
 	const fetchData = async (params = {}) => {
 		setLoading(true);
@@ -133,23 +182,191 @@ export const Project = () => {
 		createForm.resetFields();
 	};
 
+	const handleExcelImport = (file) => {
+		const reader = new FileReader();
+		reader.onload = (e) => {
+			try {
+				const data = e.target.result;
+				const workbook = XLSX.read(data, { type: 'binary' });
+				const sheetName = workbook.SheetNames[0];
+				const worksheet = workbook.Sheets[sheetName];
+				const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+				// 转换数据格式
+				const priceData = jsonData.map(row => ({
+					departure_province: row['出发省'],
+					departure_city: row['出发市'],
+					destination_province: row['到达省'],
+					destination_city: row['到达市'],
+					transport_type: row['承运类型'],
+					price: Number(row['价格（元/吨）'])
+				}));
+
+				// 校验数据
+				const errors = validatePriceData(priceData);
+				if (errors.length > 0) {
+					Modal.error({
+						title: '数据验证失败',
+						content: (
+							<div style={{ maxHeight: '300px', overflow: 'auto' }}>
+								{errors.map((error, index) => (
+									<p key={index}>{error}</p>
+								))}
+							</div>
+						),
+					});
+					return;
+				}
+
+				// 设置价格表数据
+				setPriceTableData(priceData);
+				message.success('价格配置导入成功');
+			} catch (error) {
+				console.error('Excel 解析错误:', error);
+				message.error('Excel 文件解析失败');
+			}
+		};
+		reader.readAsBinaryString(file);
+		return false; // 阻止自动上传
+	};
+
 	const handleCreateSubmit = async (values) => {
+		// 校验日期
+		if (values.start_date.isAfter(values.end_date)) {
+			message.error('合作起始时间不能晚于结束时间');
+			return;
+		}
+
+		// 校验价格配置
+		if (priceTableData.length === 0) {
+			message.error('请导入价格配置');
+			return;
+		}
+
+		const errors = validatePriceData(priceTableData);
+		if (errors.length > 0) {
+			Modal.error({
+				title: '价格配置验证失败',
+				content: (
+					<div style={{ maxHeight: '300px', overflow: 'auto' }}>
+						{errors.map((error, index) => (
+							<p key={index}>{error}</p>
+						))}
+					</div>
+				),
+			});
+			return;
+		}
+
 		try {
 			const response = await axios.post(`${backendUrl}/api/project/create`, {
 				...values,
 				start_date: values.start_date.format('YYYY-MM-DD'),
 				end_date: values.end_date.format('YYYY-MM-DD'),
+				price_config: priceTableData
 			});
+
 			responseHandler(response.data, () => {
 				message.success('创建成功');
 				setIsCreateModalOpen(false);
 				createForm.resetFields();
+				setPriceTableData([]);
 				fetchData(pagination);
 			});
 		} catch (error) {
-			message.error('创建失败');
-			console.error(error);
+			if (error.response?.data?.error === 'PROJECT_NAME_EXISTS') {
+				message.error('项目名称已存在');
+			} else {
+				message.error('创建失败');
+				console.error(error);
+			}
 		}
+	};
+
+	// 添加下载模板函数
+	const handleDownloadTemplate = () => {
+		// 创建工作簿
+		const wb = XLSX.utils.book_new();
+		
+		// 创建示例数据
+		const exampleData = [
+			{
+				'出发省': '浙江省',
+				'出发市': '杭州市',
+				'到达省': '江苏省',
+				'到达市': '南京市',
+				'承运类型': '整车运输',
+				'价格（元/吨）': 1000
+			}
+		];
+		
+		// 创建工作表
+		const ws = XLSX.utils.json_to_sheet(exampleData);
+		
+		// 设置列宽
+		const wscols = [
+			{wch: 15}, // 出发省
+			{wch: 15}, // 出发市
+			{wch: 15}, // 到达省
+			{wch: 15}, // 到达市
+			{wch: 15}, // 承运类型
+			{wch: 15}  // 价格
+		];
+		ws['!cols'] = wscols;
+		
+		// 将工作表添加到工作簿
+		XLSX.utils.book_append_sheet(wb, ws, '价格配置模板');
+		
+		// 下载文件
+		XLSX.writeFile(wb, '价格配置导入模板.xlsx');
+	};
+
+	// 查看价格表
+	const handleViewPrice = async (project) => {
+		setCurrentProject(project);
+		setIsPriceModalOpen(true);
+		await fetchPriceList(project, { current: 1, pageSize: 10 });
+	};
+
+	// 获取价格列表
+	const fetchPriceList = async (project, params = {}) => {
+		setPriceLoading(true);
+		try {
+			const response = await axios.post(`${backendUrl}/api/project_price_config/list`, {
+				project_name: project.project_name,
+				page: params.current || 1,
+				per_page: params.pageSize || 10,
+			});
+			
+			if (response.data.success) {
+				const result = response.data.result;
+				setPriceList(result.items);
+				setPricePagination({
+					...params,
+					total: result.total,
+				});
+			} else {
+				message.error('获取价格配置失败');
+			}
+		} catch (error) {
+			console.error(error);
+			message.error('获取价格配置失败');
+		} finally {
+			setPriceLoading(false);
+		}
+	};
+
+	// 处理价格表分页变化
+	const handlePricePageChange = (page, pageSize) => {
+		setPricePagination({
+			...pricePagination,
+			current: page,
+			pageSize: pageSize,
+		});
+		fetchPriceList(currentProject, {
+			current: page,
+			pageSize: pageSize,
+		});
 	};
 
 	return (
@@ -223,6 +440,7 @@ export const Project = () => {
 									<Button 
 										type="link" 
 										icon={<EyeOutlined />}
+										onClick={() => handleViewPrice(project)}
 										key="view"
 									>
 										查看价格表
@@ -281,6 +499,14 @@ export const Project = () => {
 						<Input placeholder="请输入项目名称" />
 					</Form.Item>
 
+					<Form.Item 
+						label="客户名称" 
+						name="customer_name"
+						rules={[{ required: true, message: '请输入客户名称' }]}
+					>
+						<Input placeholder="请输入客户名称" />
+					</Form.Item>
+
 					<Row gutter={16}>
 						<Col span={12}>
 							<Form.Item 
@@ -307,7 +533,12 @@ export const Project = () => {
 							dataSource={priceTableData}
 							columns={[
 								{
-									title: '出发地',
+									title: '出发省',
+									dataIndex: 'departure_province',
+									key: 'departure_province',
+								},
+								{
+									title: '出发市',
 									dataIndex: 'departure_city',
 									key: 'departure_city',
 								},
@@ -335,13 +566,23 @@ export const Project = () => {
 							pagination={false}
 							size="small"
 						/>
-						<Button 
-							type="primary" 
-							icon={<PlusOutlined />} 
-							style={{ marginTop: '16px' }}
-						>
-							Excel 导入
-						</Button>
+						<Form.Item label="价格配置">
+							<Space>
+								<Upload
+									accept=".xlsx,.xls"
+									beforeUpload={handleExcelImport}
+									showUploadList={false}
+								>
+									<Button icon={<UploadOutlined />}>Excel 导入</Button>
+								</Upload>
+								<Button
+									icon={<DownloadOutlined />}
+									onClick={handleDownloadTemplate}
+								>
+									下载导入模板
+								</Button>
+							</Space>
+						</Form.Item>
 					</Form.Item>
 
 					<Form.Item 
@@ -439,6 +680,60 @@ export const Project = () => {
 						/>
 					</Form.Item>
 				</Form>
+			</Modal>
+
+			<Modal
+				title={`价格配置 - ${currentProject?.project_name}`}
+				open={isPriceModalOpen}
+				onCancel={() => setIsPriceModalOpen(false)}
+				width={1000}
+				footer={null}
+			>
+				<Table
+					dataSource={priceList}
+					columns={[
+						{
+							title: '出发省',
+							dataIndex: 'departure_province',
+							key: 'departure_province',
+						},
+						{
+							title: '出发市',
+							dataIndex: 'departure_city',
+							key: 'departure_city',
+						},
+						{
+							title: '到达省',
+							dataIndex: 'destination_province',
+							key: 'destination_province',
+						},
+						{
+							title: '到达市',
+							dataIndex: 'destination_city',
+							key: 'destination_city',
+						},
+						{
+							title: '承运类型',
+							dataIndex: 'carrier_type',
+							key: 'carrier_type',
+							render: (type) => type === 1 ? '整车运输' : '零担运输',
+						},
+						{
+							title: '价格（元/吨）',
+							dataIndex: 'unit_price',
+							key: 'unit_price',
+						},
+					]}
+					loading={priceLoading}
+					pagination={{
+						...pricePagination,
+						onChange: handlePricePageChange,
+						showSizeChanger: true,
+						showQuickJumper: true,
+						showTotal: (total) => `共 ${total} 条记录`,
+					}}
+					rowKey="id"
+				/>
 			</Modal>
 		</div>
 	);

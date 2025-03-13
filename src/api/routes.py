@@ -3,12 +3,12 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User, ProjectInfo, ProjectPriceConfig
+from api.models import db, User, ProjectInfo, ProjectPriceConfig, Order
 from api.utils import generate_sitemap, APIException
 from api.enum.error_code import ErrorCode
 from flask_cors import CORS
 from datetime import datetime
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 import pdb
 from api.enum.provinces_and_cities import provinces_and_cities
 
@@ -17,6 +17,9 @@ api = Blueprint('api', __name__)
 
 # 允许跨域请求
 CORS(api)
+
+# 定义承运类型
+TRANSPORT_TYPES = ['整车运输', '零担运输']
 
 # 成功响应处理函数
 def success_response(result=None):
@@ -45,6 +48,44 @@ def error_response(error_code_enum, error_message=None):
         "error_code": error_code_enum['code'],
         "error_message": error_message if error_message else error_code_enum['message']
     })
+
+# 验证价格配置数据
+def validate_price_config(price_config):
+    """
+    验证价格配置数据的正确性
+    :param price_config: 价格配置数据列表
+    :return: (bool, list) 是否验证通过，错误信息列表
+    """
+    errors = []
+    unique_keys = set()
+
+    for index, item in enumerate(price_config):
+        # 验证省市是否存在
+        if item['departure_province'] not in provinces_and_cities:
+            errors.append(f"第 {index + 1} 行：出发省 '{item['departure_province']}' 不存在")
+        elif item['departure_city'] not in provinces_and_cities[item['departure_province']]:
+            errors.append(f"第 {index + 1} 行：出发市 '{item['departure_city']}' 不是 {item['departure_province']} 的城市")
+
+        if item['destination_province'] not in provinces_and_cities:
+            errors.append(f"第 {index + 1} 行：到达省 '{item['destination_province']}' 不存在")
+        elif item['destination_city'] not in provinces_and_cities[item['destination_province']]:
+            errors.append(f"第 {index + 1} 行：到达市 '{item['destination_city']}' 不是 {item['destination_province']} 的城市")
+
+        # 验证承运类型
+        if item['transport_type'] not in TRANSPORT_TYPES:
+            errors.append(f"第 {index + 1} 行：承运类型必须是 '整车运输' 或 '零担运输'")
+
+        # 验证唯一性
+        key = f"{item['departure_province']}-{item['departure_city']}-{item['destination_province']}-{item['destination_city']}"
+        if key in unique_keys:
+            errors.append(f"第 {index + 1} 行：出发地-到达地组合重复")
+        unique_keys.add(key)
+
+        # 验证价格
+        if not isinstance(item['price'], (int, float)) or item['price'] <= 0:
+            errors.append(f"第 {index + 1} 行：价格必须是大于0的数字")
+
+    return len(errors) == 0, errors
 
 # 全局异常处理装饰器
 @api.errorhandler(Exception)
@@ -230,7 +271,76 @@ def delete_project():
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR)
 
 
-#报价表相关逻辑
+@api.route('/project/create', methods=['POST'])
+def create_project():
+    """
+    创建新项目及其价格配置
+    :return: 创建结果
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必要字段
+        required_fields = ['project_name', 'customer_name', 'start_date', 'end_date', 'price_config']
+        for field in required_fields:
+            if field not in data:
+                return error_response(ErrorCode.BAD_REQUEST, f"缺少必要字段: {field}")
+
+        # 检查项目名称是否已存在
+        if ProjectInfo.query.filter_by(project_name=data['project_name']).first():
+            return error_response(ErrorCode.BAD_REQUEST, "项目名称已存在")
+
+        # 验证日期
+        start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
+        if start_date > end_date:
+            return error_response(ErrorCode.BAD_REQUEST, "合作起始时间不能晚于结束时间")
+
+        # 验证价格配置
+        is_valid, errors = validate_price_config(data['price_config'])
+        if not is_valid:
+            return error_response(ErrorCode.BAD_REQUEST, "\n".join(errors))
+
+        # 创建项目
+        new_project = ProjectInfo(
+            project_name=data['project_name'],
+            customer_name=data['customer_name'],
+            start_date=start_date,
+            end_date=end_date,
+            project_description=data.get('project_description', '')
+        )
+        db.session.add(new_project)
+        db.session.flush()  # 获取新项目的ID
+
+        # 创建价格配置
+        price_configs = []
+        for config in data['price_config']:
+            price_config = ProjectPriceConfig(
+                project_id=new_project.id,
+                project_name=new_project.project_name,
+                departure_province=config['departure_province'],
+                departure_city=config['departure_city'],
+                destination_province=config['destination_province'],
+                destination_city=config['destination_city'],
+                carrier_type=1 if config['transport_type'] == '整车运输' else 2,
+                tonnage_upper_limit=999999,  # 默认上限
+                tonnage_lower_limit=0,  # 默认下限
+                unit_price=config['price']
+            )
+            price_configs.append(price_config)
+
+        db.session.add_all(price_configs)
+        db.session.commit()
+
+        return success_response({
+            'id': new_project.id,
+            'project_name': new_project.project_name
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
 @api.route('/project_price_config/list', methods=['POST'])
 def query_project_price_config():
     """
@@ -239,45 +349,50 @@ def query_project_price_config():
     """
     data = request.get_json()
     
-    # 解析请求参数
     try:
-        departure_province = data.get('departure_province')
-        departure_city = data.get('departure_city')
-        destination_province = data.get('destination_province')
-        destination_city = data.get('destination_city')
-        page = data.get('page', 1)  # 获取页码，默认为1
-        per_page = data.get('per_page', 10)  # 获取每页显示的项目数，默认为10
+        # 构建查询条件，添加明确的连接条件
+        query = ProjectPriceConfig.query.join(
+            ProjectInfo,
+            ProjectPriceConfig.project_id == ProjectInfo.id
+        )
+        
+        # 项目名称搜索
+        if 'project_name' in data and data['project_name']:
+            query = query.filter(ProjectInfo.project_name == data['project_name'])
+        
+        # 出发地筛选
+        if 'departure_province' in data and data['departure_province']:
+            query = query.filter(ProjectPriceConfig.departure_province == data['departure_province'])
+            if 'departure_city' in data and data['departure_city']:
+                query = query.filter(ProjectPriceConfig.departure_city == data['departure_city'])
+
+        # 分页
+        page = data.get('page', 1)
+        per_page = data.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        # 构造返回数据
+        items = [{
+            'id': item.id,
+            'project_id': item.project_id,
+            'project_name': item.project_name,
+            'departure_province': item.departure_province,
+            'departure_city': item.departure_city,
+            'destination_province': item.destination_province,
+            'destination_city': item.destination_city,
+            'carrier_type': item.carrier_type,
+            'unit_price': item.unit_price
+        } for item in pagination.items]
+
+        return success_response({
+            'items': items,
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'current_page': page
+        })
+
     except Exception as e:
-        return error_response(ErrorCode.BAD_REQUEST)
-    
-    # 构建查询条件
-    query = ProjectPriceConfig.query
-    if departure_province:
-        query = query.filter_by(departure_province=departure_province)
-    if departure_city:
-        query = query.filter_by(departure_city=departure_city)
-    if destination_province:
-        query = query.filter_by(destination_province=destination_province)
-    if destination_city:
-        query = query.filter_by(destination_city=destination_city)
-    
-    # 分页查询
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-     
-    # 将查询结果转换为字典列表
-    result_list = [item.__dict__ for item in pagination.items]
-    for item in result_list:
-        item.pop('_sa_instance_state', None)  # 移除不需要的字段
-    
-    # 返回分页信息
-    result = {
-        "items": result_list,
-        "page": pagination.page,
-        "pages": pagination.pages,
-        "total": pagination.total
-    }
-    
-    return success_response(result)
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @api.route('/project_price_config/upload', methods=['POST'])
 def upload_project_price_config():
@@ -361,3 +476,157 @@ def upload_project_price_config():
     except Exception as e:
         db.session.rollback()
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR)
+
+@api.route('/order/list', methods=['POST'])
+def get_orders():
+    """
+    获取订单列表，支持分页和搜索
+    :return: 分页后的订单列表数据
+    """
+    data = request.get_json()
+    page = data.get('page', 1)
+    per_page = data.get('per_page', 10)
+    
+    # 构建查询条件
+    query = Order.query
+    
+    # 下单日期筛选
+    if 'order_date' in data and data['order_date']:
+        query = query.filter(Order.order_date == datetime.strptime(data['order_date'], '%Y-%m-%d').date())
+    
+    # 发货日期筛选
+    if 'delivery_date' in data and data['delivery_date']:
+        query = query.filter(Order.delivery_date == datetime.strptime(data['delivery_date'], '%Y-%m-%d').date())
+    
+    # 订单号搜索
+    if 'order_number' in data and data['order_number']:
+        query = query.filter(Order.order_number.like(f"%{data['order_number']}%"))
+    
+    # 送达地筛选
+    if 'destination' in data and data['destination']:
+        query = query.filter(Order.destination.like(f"%{data['destination']}%"))
+
+    # 按订单号降序排序
+    query = query.order_by(Order.order_number.desc())
+    
+    # 执行分页查询
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    # 构造返回数据
+    orders = [{
+        'id': order.id,
+        'order_number': order.order_number,
+        'order_date': order.order_date.strftime('%Y-%m-%d'),
+        'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
+        'customer_info': order.customer_info,
+        'cargo_info': order.cargo_info,
+        'departure': order.departure,
+        'destination': order.destination,
+        'transport_info': order.transport_info,
+        'amount': float(order.amount),
+        'remark': order.remark,
+        'status': order.status
+    } for order in pagination.items]
+    
+    return success_response({
+        'items': orders,
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    })
+
+@api.route('/order/export', methods=['POST'])
+def export_orders():
+    """
+    导出订单列表
+    :return: 订单列表数据
+    """
+    data = request.get_json()
+    
+    # 构建查询条件
+    query = Order.query
+    
+    # 下单日期筛选
+    if 'order_date' in data and data['order_date']:
+        query = query.filter(Order.order_date == datetime.strptime(data['order_date'], '%Y-%m-%d').date())
+    
+    # 发货日期筛选
+    if 'delivery_date' in data and data['delivery_date']:
+        query = query.filter(Order.delivery_date == datetime.strptime(data['delivery_date'], '%Y-%m-%d').date())
+    
+    # 订单号搜索
+    if 'order_number' in data and data['order_number']:
+        query = query.filter(Order.order_number.like(f"%{data['order_number']}%"))
+    
+    # 送达地筛选
+    if 'destination' in data and data['destination']:
+        query = query.filter(Order.destination.like(f"%{data['destination']}%"))
+
+    # 按订单号降序排序
+    query = query.order_by(Order.order_number.desc())
+    
+    # 获取所有符合条件的订单
+    orders = query.all()
+    
+    # 构造返回数据
+    orders_data = [{
+        'order_number': order.order_number,
+        'order_date': order.order_date.strftime('%Y-%m-%d'),
+        'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
+        'customer_info': order.customer_info,
+        'cargo_info': order.cargo_info,
+        'departure': order.departure,
+        'destination': order.destination,
+        'transport_info': order.transport_info,
+        'amount': float(order.amount),
+        'remark': order.remark,
+        'status': order.status
+    } for order in orders]
+    
+    return success_response({
+        'items': orders_data
+    })
+
+@api.route('/order/import', methods=['POST'])
+def import_orders():
+    """
+    导入订单
+    :return: 导入结果
+    """
+    data = request.get_json()
+    if not data or 'orders' not in data:
+        return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
+    
+    try:
+        new_orders = []
+        for order_data in data['orders']:
+            # 检查订单号是否已存在
+            if Order.query.filter_by(order_number=order_data['order_number']).first():
+                continue
+            
+            # 创建新订单
+            new_order = Order(
+                order_number=order_data['order_number'],
+                order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
+                delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
+                customer_info=order_data['customer_info'],
+                cargo_info=order_data['cargo_info'],
+                departure=order_data['departure'],
+                destination=order_data['destination'],
+                transport_info=order_data.get('transport_info'),
+                amount=order_data['amount'],
+                remark=order_data.get('remark'),
+                status=order_data['status']
+            )
+            new_orders.append(new_order)
+        
+        if new_orders:
+            db.session.add_all(new_orders)
+            db.session.commit()
+            return success_response({'imported_count': len(new_orders)})
+        else:
+            return error_response(ErrorCode.BAD_REQUEST, '没有新的订单需要导入')
+            
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
