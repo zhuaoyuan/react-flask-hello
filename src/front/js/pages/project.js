@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Table, Space, message, Upload, Modal, DatePicker } from 'antd';
+import { Form, Input, Button, Table, Space, message, Upload, Modal, DatePicker, Card, Typography, Row, Col } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
 import { responseHandler } from '../component/responseHandler';
 import FileSaver from 'file-saver';
 import * as XLSX from 'xlsx';
-import { UploadOutlined } from '@ant-design/icons';
+import { UploadOutlined, SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
+const { Title } = Typography;
+const { TextArea } = Input;
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -243,77 +245,135 @@ export const Project = () => {
 			title: '项目名称',
 			dataIndex: 'project_name',
 			key: 'project_name',
+			ellipsis: true,
+			width: 200,
 		},
 		{
 			title: '客户名称',
 			dataIndex: 'customer_name',
 			key: 'customer_name',
+			ellipsis: true,
+			width: 150,
 		},
 		{
 			title: '合作起始时间',
 			dataIndex: 'start_date',
 			key: 'start_date',
+			width: 120,
 		},
 		{
 			title: '合作结束时间',
 			dataIndex: 'end_date',
 			key: 'end_date',
+			width: 120,
 		},
 		{
 			title: '项目描述',
 			dataIndex: 'project_description',
 			key: 'project_description',
+			ellipsis: true,
+			width: 200,
 		},
 		{
 			title: '操作',
 			key: 'action',
+			fixed: 'right',
+			width: 200,
 			render: (_, record) => (
 				<Space size="middle">
-					<a style={{ color: 'blue', textDecoration: 'none' }} onClick={() => handleEdit(record.id)}>编辑</a>
-					<a style={{ color: 'blue', textDecoration: 'none' }} onClick={() => handleDelete(record.id)}>删除</a>
-					<a style={{ color: 'blue', textDecoration: 'none' }} >查看价格表</a>
+					<Button 
+						type="link" 
+						icon={<EditOutlined />}
+						onClick={() => handleEdit(record.id)}
+						style={{ padding: '0 8px' }}
+					>
+						编辑
+					</Button>
+					<Button 
+						type="link" 
+						icon={<DeleteOutlined />}
+						onClick={() => handleDelete(record.id)}
+						style={{ padding: '0 8px', color: '#ff4d4f' }}
+					>
+						删除
+					</Button>
+					<Button 
+						type="link" 
+						icon={<EyeOutlined />}
+						style={{ padding: '0 8px' }}
+					>
+						查看价格表
+					</Button>
 				</Space>
 			),
 		},
 	];
 
 	return (
-		<div>
-			<Form
-				form={queryForm}
-				layout="vertical"
-				onFinish={fetchData}
-				initialValues={{ name: '' }}
-			>
-				<Form.Item label="搜索" name="search">
-					<Input
-						placeholder="输入搜索关键词"
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-					/>
-				</Form.Item>
-				<Form.Item>
-					<Space>
-						<Button type="primary" onClick={() => {
-							fetchData({ pagination: pagination });
-						}}>
-							查询
-						</Button>
-						<ExcelUploader />
-						<Button onClick={downloadExcelTemplate} >
-							下载模板
-						</Button>
-					</Space>
-				</Form.Item>
-			</Form>
-			<Table
-				columns={columns}
-				rowKey={record => record.id}
-				dataSource={data}
-				loading={loading}
-				pagination={pagination}
-				onChange={handleTableChange}
-			/>
+		<div style={{ padding: '24px' }}>
+			<Card>
+				<Title level={2} style={{ marginBottom: '24px' }}>项目管理</Title>
+				
+				<Form
+					form={queryForm}
+					layout="vertical"
+					onFinish={fetchData}
+					initialValues={{ name: '' }}
+					style={{ marginBottom: '24px' }}
+				>
+					<Row gutter={16}>
+						<Col span={8}>
+							<Form.Item label="搜索" name="search">
+								<Input
+									placeholder="输入项目名称或客户名称"
+									value={searchQuery}
+									onChange={(e) => setSearchQuery(e.target.value)}
+									prefix={<SearchOutlined />}
+									allowClear
+								/>
+							</Form.Item>
+						</Col>
+						<Col span={16}>
+							<Form.Item label="操作" style={{ marginBottom: 0 }}>
+								<Space>
+									<Button 
+										type="primary" 
+										icon={<SearchOutlined />}
+										onClick={() => {
+											fetchData({ pagination: pagination });
+										}}
+									>
+										查询
+									</Button>
+									<ExcelUploader />
+									<Button 
+										icon={<DownloadOutlined />}
+										onClick={downloadExcelTemplate}
+									>
+										下载模板
+									</Button>
+								</Space>
+							</Form.Item>
+						</Col>
+					</Row>
+				</Form>
+
+				<Table
+					columns={columns}
+					rowKey={record => record.id}
+					dataSource={data}
+					loading={loading}
+					pagination={{
+						...pagination,
+						showSizeChanger: true,
+						showQuickJumper: true,
+						showTotal: (total) => `共 ${total} 条记录`,
+					}}
+					onChange={handleTableChange}
+					scroll={{ x: 1300 }}
+				/>
+			</Card>
+
 			<Modal
 				title="确认删除"
 				open={confirmDelete.open}
@@ -321,9 +381,11 @@ export const Project = () => {
 				onCancel={handleDeleteCancel}
 				okText='确认'
 				cancelText='取消'
+				okButtonProps={{ danger: true }}
 			>
-				<p>确定要删除这个项目吗？</p>
+				<p>确定要删除这个项目吗？此操作不可恢复。</p>
 			</Modal>
+
 			<Modal
 				title="编辑项目"
 				open={isModalOpen}
@@ -331,6 +393,7 @@ export const Project = () => {
 					editForm.submit();
 				}}
 				onCancel={handleCancel}
+				width={600}
 			>
 				<Form
 					form={editForm}
@@ -342,20 +405,56 @@ export const Project = () => {
 					}}
 					onFinish={handleEditSubmit}
 				>
-					<Form.Item label="项目名称" name="project_name">
-						<Input />
-					</Form.Item>
-					<Form.Item label="客户名称" name="customer_name">
-						<Input />
-					</Form.Item>
-					<Form.Item label="合作起始时间" name="start_date">
-						<DatePicker />
-					</Form.Item>
-					<Form.Item label="合作结束时间" name="end_date">
-						<DatePicker />
-					</Form.Item>
-					<Form.Item label="项目描述" name="project_description">
-						<Input.TextArea />
+					<Row gutter={16}>
+						<Col span={12}>
+							<Form.Item 
+								label="项目名称" 
+								name="project_name"
+								rules={[{ required: true, message: '请输入项目名称' }]}
+							>
+								<Input placeholder="请输入项目名称" />
+							</Form.Item>
+						</Col>
+						<Col span={12}>
+							<Form.Item 
+								label="客户名称" 
+								name="customer_name"
+								rules={[{ required: true, message: '请输入客户名称' }]}
+							>
+								<Input placeholder="请输入客户名称" />
+							</Form.Item>
+						</Col>
+					</Row>
+					<Row gutter={16}>
+						<Col span={12}>
+							<Form.Item 
+								label="合作起始时间" 
+								name="start_date"
+								rules={[{ required: true, message: '请选择合作起始时间' }]}
+							>
+								<DatePicker style={{ width: '100%' }} />
+							</Form.Item>
+						</Col>
+						<Col span={12}>
+							<Form.Item 
+								label="合作结束时间" 
+								name="end_date"
+								rules={[{ required: true, message: '请选择合作结束时间' }]}
+							>
+								<DatePicker style={{ width: '100%' }} />
+							</Form.Item>
+						</Col>
+					</Row>
+					<Form.Item 
+						label="项目描述" 
+						name="project_description"
+					>
+						<TextArea 
+							rows={4} 
+							placeholder="请输入项目描述"
+							showCount
+							maxLength={1000}
+						/>
 					</Form.Item>
 				</Form>
 			</Modal>
