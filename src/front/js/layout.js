@@ -43,17 +43,17 @@ const MainLayout = () => {
         {
             key: '/project',
             icon: <ProjectOutlined />,
-            label: <Link to="/project">项目管理</Link>,
+            label: <Link to="/project" style={{ textDecoration: 'none' }}>项目管理</Link>,
         },
         {
             key: '/order',
             icon: <ShoppingCartOutlined />,
-            label: <Link to="/order">订单管理</Link>,
+            label: <Link to="/order" style={{ textDecoration: 'none' }}>订单管理</Link>,
         },
         {
             key: '/delivery',
             icon: <TruckOutlined />,
-            label: <Link to="/delivery">送货管理</Link>,
+            label: <Link to="/delivery" style={{ textDecoration: 'none' }}>送货管理</Link>,
         },
     ];
 
