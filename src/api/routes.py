@@ -10,6 +10,7 @@ from flask_cors import CORS
 from datetime import datetime
 from sqlalchemy import or_
 import pdb
+from api.enum.provinces_and_cities import provinces_and_cities
 
 # 创建API蓝图
 api = Blueprint('api', __name__)
@@ -32,7 +33,7 @@ def success_response(result=None):
     })
 
 # 错误响应处理函数
-def error_response(error_code_enum):
+def error_response(error_code_enum, error_message=None):
     """
     生成统一的错误响应格式
     :param error_code_enum: 错误代码枚举
@@ -42,7 +43,7 @@ def error_response(error_code_enum):
         "success": False,
         "result": {},
         "error_code": error_code_enum['code'],
-        "error_message": error_code_enum['message']
+        "error_message": error_message if error_message else error_code_enum['message']
     })
 
 # 全局异常处理装饰器
@@ -277,3 +278,85 @@ def query_project_price_config():
     }
     
     return success_response(result)
+
+@api.route('/project_price_config/upload', methods=['POST'])
+def upload_project_price_config():
+    """
+    批量上传项目价格配置
+    :return: 上传结果
+    """
+    price_data = request.get_json()
+    if (not price_data) or (not price_data.get('upload_list')):
+        return error_response(ErrorCode.BAD_REQUEST)
+
+    new_prices = []
+    error_messages = []
+
+    for index, price in enumerate(price_data.get('upload_list')):
+        # 检查项目是否存在
+        project = ProjectInfo.query.filter_by(
+            id=price['project_id'],
+            project_name=price['project_name']
+        ).first()
+        
+        sheet_index = index + 2
+
+        if not project:
+            error_messages.append(f"第{sheet_index}行：项目不存在")
+            continue
+
+        # 校验省市数据
+        departure_province = price['departure_province']
+        departure_city = price['departure_city']
+        destination_province = price['destination_province']
+        destination_city = price['destination_city']
+
+        # 检查出发省份是否存在
+        if departure_province not in provinces_and_cities:
+            error_messages.append(f"第{sheet_index}行：出发省份 '{departure_province}' 不存在")
+            continue
+
+        # 检查出发城市是否属于该省份
+        if departure_city not in provinces_and_cities[departure_province]:
+            error_messages.append(f"第{sheet_index}行：出发城市 '{departure_city}' 不属于省份 '{departure_province}'")
+            continue
+
+        # 检查目的省份是否存在
+        if destination_province not in provinces_and_cities:
+            error_messages.append(f"第{sheet_index}行：目的省份 '{destination_province}' 不存在")
+            continue
+
+        # 检查目的城市是否属于该省份
+        if destination_city not in provinces_and_cities[destination_province]:
+            error_messages.append(f"第{sheet_index}行：目的城市 '{destination_city}' 不属于省份 '{destination_province}'")
+            continue
+
+        new_price = ProjectPriceConfig(
+            project_id=price['project_id'],
+            project_name=price['project_name'],
+            departure_province=departure_province,
+            departure_city=departure_city,
+            destination_province=destination_province,
+            destination_city=destination_city,
+            carrier_type=1,  # 默认承运类型
+            tonnage_upper_limit=999999,  # 默认上限
+            tonnage_lower_limit=0,  # 默认下限
+            unit_price=price['unit_price']
+        )
+        new_prices.append(new_price)
+
+    try:
+        # 如果有错误信息，返回错误
+        if error_messages:
+            error_message = "\n".join(error_messages)
+            return error_response(ErrorCode.BAD_REQUEST, error_message)
+        # 批量插入新价格配置
+        if new_prices:
+            db.session.add_all(new_prices)
+            db.session.commit()
+            return success_response()
+        else:
+            return error_response(ErrorCode.BAD_REQUEST)
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR)

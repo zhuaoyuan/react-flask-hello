@@ -285,7 +285,7 @@ export const Project = () => {
 						type="link" 
 						icon={<EditOutlined />}
 						onClick={() => handleEdit(record.id)}
-						style={{ padding: '0 8px' }}
+						style={{ padding: '0 4px' }}
 					>
 						编辑
 					</Button>
@@ -293,14 +293,14 @@ export const Project = () => {
 						type="link" 
 						icon={<DeleteOutlined />}
 						onClick={() => handleDelete(record.id)}
-						style={{ padding: '0 8px', color: '#ff4d4f' }}
+						style={{ padding: '0 4px', color: '#ff4d4f' }}
 					>
 						删除
 					</Button>
 					<Button 
 						type="link" 
 						icon={<EyeOutlined />}
-						style={{ padding: '0 8px' }}
+						style={{ padding: '0 4px' }}
 					>
 						查看价格表
 					</Button>

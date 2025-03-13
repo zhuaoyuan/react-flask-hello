@@ -14,6 +14,11 @@ export const Navbar = () => {
 					</Link>
 				</div>
 				<div className="ml-auto">
+					<Link to="/price">
+						<button className="btn btn-primary">价格管理</button>
+					</Link>
+				</div>
+				<div className="ml-auto">
 					<Link to="/demo">
 						<button className="btn btn-primary">订单管理</button>
 					</Link>
