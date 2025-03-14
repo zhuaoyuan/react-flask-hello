@@ -15,7 +15,6 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(80), unique=False, nullable=False)
-    # is_active = db.Column(db.Boolean(), unique=False, nullable=False)
 
     def __repr__(self):
         """返回用户对象的字符串表示"""
@@ -31,7 +30,7 @@ class User(db.Model):
             "email": self.email,
             # 出于安全考虑，不序列化密码
         }
-    
+
 class ProjectInfo(db.Model):
     """
     项目信息模型
@@ -108,7 +107,9 @@ class Order(db.Model):
     order_date = db.Column(db.Date, nullable=False, comment='下单日期')
     delivery_date = db.Column(db.Date, nullable=False, comment='发货日期')
     customer_info = db.Column(db.String(255), nullable=False, comment='客户信息')
-    cargo_info = db.Column(db.String(500), nullable=False, comment='货物信息')
+    product_name = db.Column(db.String(255), nullable=False, comment='产品名称')
+    quantity = db.Column(db.Integer, nullable=False, comment='数量')
+    weight = db.Column(db.DECIMAL(10,3), nullable=False, comment='重量(吨)')
     departure_province = db.Column(db.String(20), nullable=False, comment='出发省')
     departure_city = db.Column(db.String(20), nullable=False, comment='出发市')
     destination_province = db.Column(db.String(20), nullable=False, comment='送达省')
@@ -130,7 +131,9 @@ class Order(db.Model):
             'order_date': self.order_date.isoformat() if self.order_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
             'customer_info': self.customer_info,
-            'cargo_info': self.cargo_info,
+            'product_name': self.product_name,
+            'quantity': self.quantity,
+            'weight': float(self.weight) if self.weight else 0,
             'departure_province': self.departure_province,
             'departure_city': self.departure_city,
             'destination_province': self.destination_province,

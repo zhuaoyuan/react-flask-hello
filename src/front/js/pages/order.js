@@ -68,7 +68,6 @@ export const Order = () => {
         setLoading(true);
         try {
             const orderDate = form.getFieldValue('order_date');
-            const deliveryDate = form.getFieldValue('delivery_date');
             const destination = form.getFieldValue('destination');
             
             const response = await axios.post(`${backendUrl}/api/order/list`, {
@@ -78,25 +77,28 @@ export const Order = () => {
                 order_number: form.getFieldValue('order_number'),
                 order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
                 order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
-                delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
-                delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
                 destination_province: destination?.[0],
                 destination_city: destination?.[1]
             });
 
-            if (response.data.data) {
-                const formattedData = response.data.data.items.map(item => ({
+            console.log('订单列表响应:', response.data);
+
+            if (response.data.success && response.data.result) {
+                const formattedData = response.data.result.items.map(item => ({
                     ...item,
+                    key: item.id,
                     departure: `${item.departure_province}${item.departure_city}`,
                     destination: `${item.destination_province}${item.destination_city}${item.destination_address || ''}`,
+                    cargo_info: `产品名称：${item.product_name}\n数量：${item.quantity}\n重量：${item.weight}吨`,
                     remark: item.remark || ''
                 }));
+                console.log('格式化后的数据:', formattedData);
                 setData(formattedData);
                 setPagination({
                     ...params,
-                    current: response.data.data.page || 1,
-                    pageSize: response.data.data.per_page || 10,
-                    total: response.data.data.total || 0,
+                    current: response.data.result.current_page || 1,
+                    pageSize: response.data.result.per_page || 10,
+                    total: response.data.result.total || 0,
                 });
             } else {
                 setData([]);
@@ -146,7 +148,6 @@ export const Order = () => {
     const handleExport = async () => {
         try {
             const orderDate = form.getFieldValue('order_date');
-            const deliveryDate = form.getFieldValue('delivery_date');
             const destination = form.getFieldValue('destination');
             
             const response = await axios.post(`${backendUrl}/api/order/export`, {
@@ -154,8 +155,6 @@ export const Order = () => {
                 order_number: form.getFieldValue('order_number'),
                 order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
                 order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
-                delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
-                delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
                 destination_province: destination?.[0],
                 destination_city: destination?.[1]
             });
@@ -167,10 +166,12 @@ export const Order = () => {
                     '订单号': order.order_number,
                     '下单日期': order.order_date,
                     '客户信息': order.customer_info,
-                    '货物信息': order.cargo_info,
+                    '产品名称': order.product_name,
+                    '数量': order.quantity,
+                    '重量(吨)': order.weight,
                     '出发地': `${order.departure_province}${order.departure_city}`,
                     '送达地': `${order.destination_province}${order.destination_city}${order.destination_address || ''}`,
-                    '备注': order.transport_info || ''
+                    '备注': order.remark || ''
                 }));
                 const ws = XLSX.utils.json_to_sheet(exportData);
                 XLSX.utils.book_append_sheet(wb, ws, '订单列表');
@@ -194,7 +195,6 @@ export const Order = () => {
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
                 
                 const orders = jsonData.map(row => {
-                    // 拆分出发地和送达地
                     const departure = row['出发地'] || '';
                     const destination = row['送达地'] || '';
                     
@@ -202,13 +202,15 @@ export const Order = () => {
                         order_number: row['订单号'],
                         order_date: row['下单日期'],
                         customer_info: row['客户信息'],
-                        cargo_info: row['货物信息'],
+                        product_name: row['产品名称'],
+                        quantity: parseInt(row['数量'], 10),
+                        weight: parseFloat(row['重量(吨)']),
                         departure_province: departure.substring(0, 2) || '',
                         departure_city: departure.substring(2) || '',
                         destination_province: destination.substring(0, 2) || '',
                         destination_city: destination.substring(2, 4) || '',
                         destination_address: destination.substring(4) || '',
-                        transport_info: row['备注']
+                        remark: row['备注']
                     };
                 });
 
@@ -242,9 +244,10 @@ export const Order = () => {
             width: 100,
         },
         {
-            title: '客户信息',
-            dataIndex: 'customer_info',
+            title: '客户报价',
+            dataIndex: 'amount',
             width: 120,
+            render: (text) => `¥${text.toFixed(2)}`
         },
         {
             title: '货物信息',
@@ -334,9 +337,6 @@ export const Order = () => {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         <div style={{ flex: 1, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <Form.Item label="下单日期" name="order_date">
-                                <RangePicker style={{ width: '360px' }} />
-                            </Form.Item>
-                            <Form.Item label="发货日期" name="delivery_date">
                                 <RangePicker style={{ width: '360px' }} />
                             </Form.Item>
                             <Form.Item label="订单号" name="order_number">

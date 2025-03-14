@@ -3,7 +3,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
-from api.models import db, User, ProjectInfo, ProjectPriceConfig, Order
+from api.models import db, ProjectInfo, ProjectPriceConfig, Order
 from api.utils import generate_sitemap, APIException
 from api.enum.error_code import ErrorCode
 from flask_cors import CORS
@@ -531,7 +531,9 @@ def get_orders():
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'customer_info': order.customer_info,
-        'cargo_info': order.cargo_info,
+        'product_name': order.product_name,
+        'quantity': order.quantity,
+        'weight': float(order.weight) if order.weight else 0,
         'departure_province': order.departure_province,
         'departure_city': order.departure_city,
         'destination_province': order.destination_province,
@@ -598,7 +600,9 @@ def export_orders():
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'customer_info': order.customer_info,
-        'cargo_info': order.cargo_info,
+        'product_name': order.product_name,
+        'quantity': order.quantity,
+        'weight': float(order.weight) if order.weight else 0,
         'departure_province': order.departure_province,
         'departure_city': order.departure_city,
         'destination_province': order.destination_province,
@@ -642,7 +646,9 @@ def import_orders():
                 order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
                 delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
                 customer_info=order_data['customer_info'],
-                cargo_info=order_data['cargo_info'],
+                product_name=order_data['product_name'],
+                quantity=order_data['quantity'],
+                weight=order_data['weight'],
                 departure_province=order_data['departure_province'],
                 departure_city=order_data['departure_city'],
                 destination_province=order_data['destination_province'],
