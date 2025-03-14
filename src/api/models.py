@@ -102,16 +102,20 @@ class Order(db.Model):
     __tablename__ = 'order'
     
     id = db.Column(db.BigInteger, primary_key=True, autoincrement=True, comment='自增ID')
+    project_id = db.Column(db.BigInteger, nullable=False, comment='项目ID')
+    project_name = db.Column(db.String(255), nullable=False, comment='项目名称')
     order_number = db.Column(db.String(50), nullable=False, unique=True, comment='订单号')
     order_date = db.Column(db.Date, nullable=False, comment='下单日期')
     delivery_date = db.Column(db.Date, nullable=False, comment='发货日期')
     customer_info = db.Column(db.String(255), nullable=False, comment='客户信息')
     cargo_info = db.Column(db.String(500), nullable=False, comment='货物信息')
-    departure = db.Column(db.String(255), nullable=False, comment='出发地')
-    destination = db.Column(db.String(255), nullable=False, comment='送达地')
-    transport_info = db.Column(db.String(500), nullable=True, comment='运输信息')
+    departure_province = db.Column(db.String(20), nullable=False, comment='出发省')
+    departure_city = db.Column(db.String(20), nullable=False, comment='出发市')
+    destination_province = db.Column(db.String(20), nullable=False, comment='送达省')
+    destination_city = db.Column(db.String(20), nullable=False, comment='送达市')
+    destination_address = db.Column(db.String(500), nullable=True, comment='送达详细地址')
+    remark = db.Column(db.String(500), nullable=True, comment='备注')
     amount = db.Column(db.Numeric(10, 2), nullable=False, comment='金额')
-    remark = db.Column(db.String(1000), nullable=True, comment='备注')
     status = db.Column(db.String(20), nullable=False, comment='订单状态')
 
     def __repr__(self):
@@ -120,15 +124,19 @@ class Order(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'project_id': self.project_id,
+            'project_name': self.project_name,
             'order_number': self.order_number,
             'order_date': self.order_date.isoformat() if self.order_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
             'customer_info': self.customer_info,
             'cargo_info': self.cargo_info,
-            'departure': self.departure,
-            'destination': self.destination,
-            'transport_info': self.transport_info,
-            'amount': float(self.amount) if self.amount else 0,
+            'departure_province': self.departure_province,
+            'departure_city': self.departure_city,
+            'destination_province': self.destination_province,
+            'destination_city': self.destination_city,
+            'destination_address': self.destination_address,
             'remark': self.remark,
+            'amount': float(self.amount) if self.amount else 0,
             'status': self.status
         }

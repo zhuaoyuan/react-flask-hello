@@ -490,21 +490,31 @@ def get_orders():
     # 构建查询条件
     query = Order.query
     
+    # 项目筛选
+    if 'project_name' in data and data['project_name']:
+        query = query.filter(Order.project_name == data['project_name'])
+    
     # 下单日期筛选
-    if 'order_date' in data and data['order_date']:
-        query = query.filter(Order.order_date == datetime.strptime(data['order_date'], '%Y-%m-%d').date())
+    if 'order_date_start' in data and data['order_date_start']:
+        query = query.filter(Order.order_date >= datetime.strptime(data['order_date_start'], '%Y-%m-%d').date())
+    if 'order_date_end' in data and data['order_date_end']:
+        query = query.filter(Order.order_date <= datetime.strptime(data['order_date_end'], '%Y-%m-%d').date())
     
     # 发货日期筛选
-    if 'delivery_date' in data and data['delivery_date']:
-        query = query.filter(Order.delivery_date == datetime.strptime(data['delivery_date'], '%Y-%m-%d').date())
+    if 'delivery_date_start' in data and data['delivery_date_start']:
+        query = query.filter(Order.delivery_date >= datetime.strptime(data['delivery_date_start'], '%Y-%m-%d').date())
+    if 'delivery_date_end' in data and data['delivery_date_end']:
+        query = query.filter(Order.delivery_date <= datetime.strptime(data['delivery_date_end'], '%Y-%m-%d').date())
     
     # 订单号搜索
     if 'order_number' in data and data['order_number']:
         query = query.filter(Order.order_number.like(f"%{data['order_number']}%"))
     
     # 送达地筛选
-    if 'destination' in data and data['destination']:
-        query = query.filter(Order.destination.like(f"%{data['destination']}%"))
+    if 'destination_province' in data and data['destination_province']:
+        query = query.filter(Order.destination_province.like(f"%{data['destination_province']}%"))
+    if 'destination_city' in data and data['destination_city']:
+        query = query.filter(Order.destination_city.like(f"%{data['destination_city']}%"))
 
     # 按订单号降序排序
     query = query.order_by(Order.order_number.desc())
@@ -515,16 +525,20 @@ def get_orders():
     # 构造返回数据
     orders = [{
         'id': order.id,
+        'project_id': order.project_id,
+        'project_name': order.project_name,
         'order_number': order.order_number,
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'customer_info': order.customer_info,
         'cargo_info': order.cargo_info,
-        'departure': order.departure,
-        'destination': order.destination,
-        'transport_info': order.transport_info,
-        'amount': float(order.amount),
+        'departure_province': order.departure_province,
+        'departure_city': order.departure_city,
+        'destination_province': order.destination_province,
+        'destination_city': order.destination_city,
+        'destination_address': order.destination_address,
         'remark': order.remark,
+        'amount': float(order.amount),
         'status': order.status
     } for order in pagination.items]
     
@@ -546,21 +560,31 @@ def export_orders():
     # 构建查询条件
     query = Order.query
     
+    # 项目筛选
+    if 'project_name' in data and data['project_name']:
+        query = query.filter(Order.project_name == data['project_name'])
+    
     # 下单日期筛选
-    if 'order_date' in data and data['order_date']:
-        query = query.filter(Order.order_date == datetime.strptime(data['order_date'], '%Y-%m-%d').date())
+    if 'order_date_start' in data and data['order_date_start']:
+        query = query.filter(Order.order_date >= datetime.strptime(data['order_date_start'], '%Y-%m-%d').date())
+    if 'order_date_end' in data and data['order_date_end']:
+        query = query.filter(Order.order_date <= datetime.strptime(data['order_date_end'], '%Y-%m-%d').date())
     
     # 发货日期筛选
-    if 'delivery_date' in data and data['delivery_date']:
-        query = query.filter(Order.delivery_date == datetime.strptime(data['delivery_date'], '%Y-%m-%d').date())
+    if 'delivery_date_start' in data and data['delivery_date_start']:
+        query = query.filter(Order.delivery_date >= datetime.strptime(data['delivery_date_start'], '%Y-%m-%d').date())
+    if 'delivery_date_end' in data and data['delivery_date_end']:
+        query = query.filter(Order.delivery_date <= datetime.strptime(data['delivery_date_end'], '%Y-%m-%d').date())
     
     # 订单号搜索
     if 'order_number' in data and data['order_number']:
         query = query.filter(Order.order_number.like(f"%{data['order_number']}%"))
     
     # 送达地筛选
-    if 'destination' in data and data['destination']:
-        query = query.filter(Order.destination.like(f"%{data['destination']}%"))
+    if 'destination_province' in data and data['destination_province']:
+        query = query.filter(Order.destination_province.like(f"%{data['destination_province']}%"))
+    if 'destination_city' in data and data['destination_city']:
+        query = query.filter(Order.destination_city.like(f"%{data['destination_city']}%"))
 
     # 按订单号降序排序
     query = query.order_by(Order.order_number.desc())
@@ -575,11 +599,13 @@ def export_orders():
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'customer_info': order.customer_info,
         'cargo_info': order.cargo_info,
-        'departure': order.departure,
-        'destination': order.destination,
-        'transport_info': order.transport_info,
-        'amount': float(order.amount),
+        'departure_province': order.departure_province,
+        'departure_city': order.departure_city,
+        'destination_province': order.destination_province,
+        'destination_city': order.destination_city,
+        'destination_address': order.destination_address,
         'remark': order.remark,
+        'amount': float(order.amount),
         'status': order.status
     } for order in orders]
     
@@ -594,10 +620,14 @@ def import_orders():
     :return: 导入结果
     """
     data = request.get_json()
-    if not data or 'orders' not in data:
+    if not data or 'orders' not in data or 'project_id' not in data:
         return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
     
     try:
+        project = ProjectInfo.query.get(data['project_id'])
+        if not project:
+            return error_response(ErrorCode.BAD_REQUEST, '项目不存在')
+
         new_orders = []
         for order_data in data['orders']:
             # 检查订单号是否已存在
@@ -606,17 +636,21 @@ def import_orders():
             
             # 创建新订单
             new_order = Order(
+                project_id=project.id,
+                project_name=project.project_name,
                 order_number=order_data['order_number'],
                 order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
                 delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
                 customer_info=order_data['customer_info'],
                 cargo_info=order_data['cargo_info'],
-                departure=order_data['departure'],
-                destination=order_data['destination'],
-                transport_info=order_data.get('transport_info'),
-                amount=order_data['amount'],
+                departure_province=order_data['departure_province'],
+                departure_city=order_data['departure_city'],
+                destination_province=order_data['destination_province'],
+                destination_city=order_data['destination_city'],
+                destination_address=order_data.get('destination_address'),
                 remark=order_data.get('remark'),
-                status=order_data['status']
+                amount=order_data.get('amount', 0),
+                status='新建'
             )
             new_orders.append(new_order)
         

@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card } from 'antd';
+import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader } from 'antd';
 import { SearchOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
+import { provinces_and_cities } from '../data/provinces_and_cities';
 
 const { RangePicker } = DatePicker;
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+// 将省市数据转换为级联选择器需要的格式
+const cascaderOptions = Object.entries(provinces_and_cities).map(([province, cities]) => ({
+    value: province,
+    label: province,
+    children: cities.map(city => ({
+        value: city,
+        label: city
+    }))
+}));
 
 export const Order = () => {
     const [form] = Form.useForm();
@@ -31,10 +42,17 @@ export const Order = () => {
                 per_page: 100
             });
             if (response.data.data) {
-                setProjects(response.data.data.map(item => ({
+                const projectList = response.data.data.map(item => ({
                     label: item.project_name,
                     value: item.project_name
-                })));
+                }));
+                setProjects(projectList);
+                
+                // 如果有项目，自动选中第一个并触发查询
+                if (projectList.length > 0) {
+                    form.setFieldValue('project_name', projectList[0].value);
+                    fetchOrders({ current: 1 });
+                }
             } else {
                 message.error('获取项目列表失败');
             }
@@ -51,6 +69,7 @@ export const Order = () => {
         try {
             const orderDate = form.getFieldValue('order_date');
             const deliveryDate = form.getFieldValue('delivery_date');
+            const destination = form.getFieldValue('destination');
             
             const response = await axios.post(`${backendUrl}/api/order/list`, {
                 page: params.current || pagination.current,
@@ -61,21 +80,39 @@ export const Order = () => {
                 order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
                 delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
                 delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
-                destination: form.getFieldValue('destination')
+                destination_province: destination?.[0],
+                destination_city: destination?.[1]
             });
 
-            if (response.data.success) {
-                const result = response.data.result;
-                setData(result.items);
+            if (response.data.data) {
+                const formattedData = response.data.data.items.map(item => ({
+                    ...item,
+                    departure: `${item.departure_province}${item.departure_city}`,
+                    destination: `${item.destination_province}${item.destination_city}${item.destination_address || ''}`,
+                    remark: item.remark || ''
+                }));
+                setData(formattedData);
                 setPagination({
                     ...params,
-                    total: result.total,
+                    current: response.data.data.page || 1,
+                    pageSize: response.data.data.per_page || 10,
+                    total: response.data.data.total || 0,
                 });
             } else {
-                message.error('获取订单列表失败');
+                setData([]);
+                setPagination({
+                    ...pagination,
+                    total: 0
+                });
+                message.error('暂无数据');
             }
         } catch (error) {
             console.error('获取订单列表错误:', error);
+            setData([]);
+            setPagination({
+                ...pagination,
+                total: 0
+            });
             message.error('获取订单列表失败');
         } finally {
             setLoading(false);
@@ -84,7 +121,6 @@ export const Order = () => {
 
     useEffect(() => {
         fetchProjects();
-        fetchOrders();
     }, []);
 
     // 处理表格变化
@@ -111,14 +147,17 @@ export const Order = () => {
         try {
             const orderDate = form.getFieldValue('order_date');
             const deliveryDate = form.getFieldValue('delivery_date');
+            const destination = form.getFieldValue('destination');
             
             const response = await axios.post(`${backendUrl}/api/order/export`, {
+                project_name: form.getFieldValue('project_name'),
                 order_number: form.getFieldValue('order_number'),
                 order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
                 order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
                 delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
                 delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
-                destination: form.getFieldValue('destination')
+                destination_province: destination?.[0],
+                destination_city: destination?.[1]
             });
 
             if (response.data.success) {
@@ -129,9 +168,9 @@ export const Order = () => {
                     '下单日期': order.order_date,
                     '客户信息': order.customer_info,
                     '货物信息': order.cargo_info,
-                    '出发地': order.departure,
-                    '送达地': order.destination,
-                    '备注': order.remark || ''
+                    '出发地': `${order.departure_province}${order.departure_city}`,
+                    '送达地': `${order.destination_province}${order.destination_city}${order.destination_address || ''}`,
+                    '备注': order.transport_info || ''
                 }));
                 const ws = XLSX.utils.json_to_sheet(exportData);
                 XLSX.utils.book_append_sheet(wb, ws, '订单列表');
@@ -154,17 +193,27 @@ export const Order = () => {
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
                 
-                const orders = jsonData.map(row => ({
-                    order_number: row['订单号'],
-                    order_date: row['下单日期'],
-                    customer_info: row['客户信息'],
-                    cargo_info: row['货物信息'],
-                    departure: row['出发地'],
-                    destination: row['送达地'],
-                    remark: row['备注']
-                }));
+                const orders = jsonData.map(row => {
+                    // 拆分出发地和送达地
+                    const departure = row['出发地'] || '';
+                    const destination = row['送达地'] || '';
+                    
+                    return {
+                        order_number: row['订单号'],
+                        order_date: row['下单日期'],
+                        customer_info: row['客户信息'],
+                        cargo_info: row['货物信息'],
+                        departure_province: departure.substring(0, 2) || '',
+                        departure_city: departure.substring(2) || '',
+                        destination_province: destination.substring(0, 2) || '',
+                        destination_city: destination.substring(2, 4) || '',
+                        destination_address: destination.substring(4) || '',
+                        transport_info: row['备注']
+                    };
+                });
 
                 const response = await axios.post(`${backendUrl}/api/order/import`, {
+                    project_id: form.getFieldValue('project_name'), // 假设project_name存储的是project_id
                     orders: orders
                 });
 
@@ -294,7 +343,20 @@ export const Order = () => {
                                 <Input placeholder="请输入订单号" style={{ width: '240px' }} />
                             </Form.Item>
                             <Form.Item label="送达城市" name="destination">
-                                <Input placeholder="请输入送达城市" style={{ width: '240px' }} />
+                                <Cascader
+                                    options={cascaderOptions}
+                                    placeholder="请选择送达城市"
+                                    style={{ width: '240px' }}
+                                    showSearch={{
+                                        filter: (inputValue, path) => {
+                                            return path.some(option => {
+                                                const label = option.label.toLowerCase();
+                                                const input = inputValue.toLowerCase();
+                                                return label.indexOf(input) > -1;
+                                            });
+                                        }
+                                    }}
+                                />
                             </Form.Item>
                             <Form.Item style={{ marginLeft: 'auto', marginRight: 0 }}>
                             <Space>
