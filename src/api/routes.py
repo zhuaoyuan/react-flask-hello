@@ -631,8 +631,33 @@ def import_orders():
         if project.project_name != data['project_name']:
             return error_response(ErrorCode.BAD_REQUEST, '项目ID与项目名称不匹配')
 
+        # 获取项目的价格配置
+        price_configs = ProjectPriceConfig.query.filter_by(project_id=project.id).all()
+        if not price_configs:
+            return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
+
+        # 创建价格配置查找字典
+        price_config_dict = {}
+        for config in price_configs:
+            key = f"{config.departure_province}-{config.departure_city}-{config.destination_province}-{config.destination_city}"
+            price_config_dict[key] = config.unit_price
+
+        # 校验订单数据并创建新订单
         new_orders = []
-        for order_data in data['orders']:
+        errors = []
+        for index, order_data in enumerate(data['orders']):
+
+            # 构建省市组合键
+            route_key = f"{order_data['departure_province']}-{order_data['departure_city']}-{order_data['destination_province']}-{order_data['destination_city']}"
+            
+            # 检查省市组合是否存在于价格配置中
+            if route_key not in price_config_dict:
+                errors.append(f"第{index + 1}行：出发地（{order_data['departure_province']}{order_data['departure_city']}）到达地（{order_data['destination_province']}{order_data['destination_city']}）的价格配置不存在")
+                continue
+
+            # 计算订单金额
+            unit_price = price_config_dict[route_key]
+            amount = float(order_data['weight']) * unit_price
 
             # 创建新订单
             new_order = Order(
@@ -650,9 +675,13 @@ def import_orders():
                 destination_city=order_data['destination_city'],
                 destination_address=order_data.get('destination_address'),
                 remark=order_data.get('remark'),
-                amount=order_data.get('amount', 0)
+                amount=amount  # 设置计算后的金额
             )
             new_orders.append(new_order)
+
+        # 如果有错误，返回错误信息
+        if errors:
+            return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
         
         if new_orders:
             db.session.add_all(new_orders)
@@ -661,6 +690,86 @@ def import_orders():
         else:
             return error_response(ErrorCode.BAD_REQUEST, '没有新的订单需要导入')
             
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
+@api.route('/order/delete', methods=['POST'])
+def delete_order():
+    """
+    删除订单
+    :return: 删除操作结果
+    """
+    data = request.json
+    id = data.get('id')
+    order = Order.query.get(id)
+    if not order:
+        return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
+
+    try:
+        db.session.delete(order)
+        db.session.commit()
+        return success_response()
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
+@api.route('/order/edit', methods=['POST'])
+def edit_order():
+    """
+    编辑订单
+    :return: 编辑结果
+    """
+    data = request.json
+    if not data or 'id' not in data:
+        return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
+
+    try:
+        order = Order.query.get(data['id'])
+        if not order:
+            return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
+
+        # 获取项目的价格配置
+        price_configs = ProjectPriceConfig.query.filter_by(project_id=order.project_id).all()
+        if not price_configs:
+            return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
+
+        # 创建价格配置查找字典
+        price_config_dict = {}
+        for config in price_configs:
+            key = f"{config.departure_province}-{config.departure_city}-{config.destination_province}-{config.destination_city}"
+            price_config_dict[key] = config.unit_price
+
+        # 构建新的省市组合键
+        departure_province = data.get('departure_province', order.departure_province)
+        departure_city = data.get('departure_city', order.departure_city)
+        destination_province = data.get('destination_province', order.destination_province)
+        destination_city = data.get('destination_city', order.destination_city)
+        route_key = f"{departure_province}-{departure_city}-{destination_province}-{destination_city}"
+
+        # 检查省市组合是否存在于价格配置中
+        if route_key not in price_config_dict:
+            return error_response(ErrorCode.BAD_REQUEST, f"出发地（{departure_province}{departure_city}）到达地（{destination_province}{destination_city}）的价格配置不存在")
+
+        # 更新订单信息
+        order.order_number = data.get('order_number', order.order_number)
+        order.order_date = datetime.strptime(data.get('order_date'), '%Y-%m-%d').date() if data.get('order_date') else order.order_date
+        order.product_name = data.get('product_name', order.product_name)
+        order.quantity = data.get('quantity', order.quantity)
+        order.weight = data.get('weight', order.weight)
+        order.departure_province = departure_province
+        order.departure_city = departure_city
+        order.destination_province = destination_province
+        order.destination_city = destination_city
+        order.destination_address = data.get('destination_address', order.destination_address)
+        order.remark = data.get('remark', order.remark)
+
+        # 重新计算金额
+        unit_price = price_config_dict[route_key]
+        order.amount = float(order.weight) * unit_price
+
+        db.session.commit()
+        return success_response()
     except Exception as e:
         db.session.rollback()
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))

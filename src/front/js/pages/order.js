@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader } from 'antd';
+import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader, Modal, Popconfirm } from 'antd';
 import { SearchOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
@@ -31,6 +31,9 @@ export const Order = () => {
         pageSize: 10,
         total: 0
     });
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editForm] = Form.useForm();
+    const [editingOrder, setEditingOrder] = useState(null);
 
     // 获取项目列表
     const fetchProjects = async () => {
@@ -347,6 +350,74 @@ export const Order = () => {
         return false;
     };
 
+    // 处理编辑按钮点击
+    const handleEdit = (record) => {
+        setEditingOrder(record);
+        editForm.setFieldsValue({
+            order_number: record.order_number,
+            order_date: dayjs(record.order_date),
+            product_name: record.product_name,
+            quantity: record.quantity,
+            weight: record.weight,
+            departure: [record.departure_province, record.departure_city],
+            destination: [record.destination_province, record.destination_city],
+            destination_address: record.destination_address,
+            remark: record.remark
+        });
+        setEditModalVisible(true);
+    };
+
+    // 处理编辑提交
+    const handleEditSubmit = async () => {
+        try {
+            const values = await editForm.validateFields();
+            const [departure_province, departure_city] = values.departure;
+            const [destination_province, destination_city] = values.destination;
+
+            const response = await axios.post(`${backendUrl}/api/order/edit`, {
+                id: editingOrder.id,
+                order_number: values.order_number,
+                order_date: values.order_date.format('YYYY-MM-DD'),
+                product_name: values.product_name,
+                quantity: parseInt(values.quantity),
+                weight: parseFloat(values.weight),
+                departure_province,
+                departure_city,
+                destination_province,
+                destination_city,
+                destination_address: values.destination_address,
+                remark: values.remark
+            });
+
+            if (response.data.success) {
+                message.success('编辑成功');
+                setEditModalVisible(false);
+                fetchOrders();
+            } else {
+                message.error(response.data.error_message || '编辑失败');
+            }
+        } catch (error) {
+            console.error('编辑错误:', error);
+            message.error('编辑失败：' + (error.response?.data?.error_message || error.message || '未知错误'));
+        }
+    };
+
+    // 处理删除
+    const handleDelete = async (id) => {
+        try {
+            const response = await axios.post(`${backendUrl}/api/order/delete`, { id });
+            if (response.data.success) {
+                message.success('删除成功');
+                fetchOrders();
+            } else {
+                message.error(response.data.error_message || '删除失败');
+            }
+        } catch (error) {
+            console.error('删除错误:', error);
+            message.error('删除失败：' + (error.response?.data?.error_message || error.message || '未知错误'));
+        }
+    };
+
     // 表格列定义
     const columns = [
         {
@@ -398,8 +469,15 @@ export const Order = () => {
             width: 120,
             render: (_, record) => (
                 <Space>
-                    <Button type="link" size="small">编辑</Button>
-                    <Button type="link" size="small" danger>删除</Button>
+                    <Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button>
+                    <Popconfirm
+                        title="确定要删除这条订单吗？"
+                        onConfirm={() => handleDelete(record.id)}
+                        okText="确定"
+                        cancelText="取消"
+                    >
+                        <Button type="link" size="small" danger>删除</Button>
+                    </Popconfirm>
                 </Space>
             ),
         },
@@ -505,6 +583,97 @@ export const Order = () => {
                     size="middle"
                 />
             </Card>
+
+            {/* 编辑对话框 */}
+            <Modal
+                title="编辑订单"
+                open={editModalVisible}
+                onOk={handleEditSubmit}
+                onCancel={() => setEditModalVisible(false)}
+                width={800}
+            >
+                <Form
+                    form={editForm}
+                    layout="vertical"
+                >
+                    <Form.Item
+                        name="order_number"
+                        label="订单号"
+                        rules={[{ required: true, message: '请输入订单号' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="order_date"
+                        label="下单日期"
+                        rules={[{ required: true, message: '请选择下单日期' }]}
+                    >
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="product_name"
+                        label="产品名称"
+                        rules={[{ required: true, message: '请输入产品名称' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="quantity"
+                        label="数量"
+                        rules={[
+                            { required: true, message: '请输入数量' },
+                            { type: 'number', min: 1, transform: (value) => Number(value) }
+                        ]}
+                    >
+                        <Input type="number" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="weight"
+                        label="重量(吨)"
+                        rules={[
+                            { required: true, message: '请输入重量' },
+                            { type: 'number', min: 0.001, transform: (value) => Number(value) }
+                        ]}
+                    >
+                        <Input type="number" step="0.001" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="departure"
+                        label="出发地"
+                        rules={[{ required: true, message: '请选择出发地' }]}
+                    >
+                        <Cascader options={cascaderOptions} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="destination"
+                        label="送达地"
+                        rules={[{ required: true, message: '请选择送达地' }]}
+                    >
+                        <Cascader options={cascaderOptions} />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="destination_address"
+                        label="送达详细地址"
+                        rules={[{ required: true, message: '请输入送达详细地址' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="remark"
+                        label="备注"
+                    >
+                        <Input.TextArea />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 }; 
