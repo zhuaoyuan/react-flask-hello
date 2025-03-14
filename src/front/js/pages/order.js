@@ -44,13 +44,14 @@ export const Order = () => {
             if (response.data.data) {
                 const projectList = response.data.data.map(item => ({
                     label: item.project_name,
-                    value: item.project_name
+                    value: item.id,
+                    project_name: item.project_name
                 }));
                 setProjects(projectList);
                 
                 // 如果有项目，自动选中第一个并触发查询
                 if (projectList.length > 0) {
-                    form.setFieldValue('project_name', projectList[0].value);
+                    form.setFieldValue('project_name', projectList[0].project_name);
                     fetchOrders({ current: 1 });
                 }
             } else {
@@ -165,7 +166,6 @@ export const Order = () => {
                 const exportData = orders.map(order => ({
                     '订单号': order.order_number,
                     '下单日期': order.order_date,
-                    '客户信息': order.customer_info,
                     '产品名称': order.product_name,
                     '数量': order.quantity,
                     '重量(吨)': order.weight,
@@ -183,6 +183,53 @@ export const Order = () => {
         }
     };
 
+    // 下载模板
+    const handleDownloadTemplate = () => {
+        // 创建模板数据
+        const templateData = [
+            {
+                '订单号': 'JD202401010001',
+                '下单日期': '2024-01-01',
+                '送货日期': '2024-01-02',
+                '产品名称': '笔记本电脑',
+                '数量': '20',
+                '重量(吨)': '0.400',
+                '出发省': '广东省',
+                '出发市': '深圳市',
+                '送达省': '北京市',
+                '送达市': '北京市',
+                '送达详细地址': '朝阳区三里屯街道xx号',
+                '备注': '需要提前预约送货'
+            }
+        ];
+
+        // 创建工作簿
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(templateData);
+
+        // 设置列宽
+        ws['!cols'] = [
+            { wch: 15 },  // 订单号
+            { wch: 12 },  // 下单日期
+            { wch: 12 },  // 送货日期
+            { wch: 15 },  // 产品名称
+            { wch: 8 },   // 数量
+            { wch: 10 },  // 重量
+            { wch: 10 },  // 出发省
+            { wch: 10 },  // 出发市
+            { wch: 10 },  // 送达省
+            { wch: 10 },  // 送达市
+            { wch: 40 },  // 送达详细地址
+            { wch: 20 }   // 备注
+        ];
+
+        // 添加工作表到工作簿
+        XLSX.utils.book_append_sheet(wb, ws, '订单导入模板');
+        
+        // 下载文件
+        XLSX.writeFile(wb, '订单导入模板.xlsx');
+    };
+
     // 导入订单
     const handleImport = (file) => {
         const reader = new FileReader();
@@ -193,38 +240,107 @@ export const Order = () => {
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
-                
-                const orders = jsonData.map(row => {
-                    const departure = row['出发地'] || '';
-                    const destination = row['送达地'] || '';
-                    
+
+                // 数据验证
+                const errors = [];
+                const orders = jsonData.map((row, index) => {
+                    const rowNum = index + 2; // Excel行号从2开始（1是表头）
+
+                    // 检查必填字段
+                    if (!row['订单号']) errors.push(`第${rowNum}行：订单号不能为空`);
+                    if (!row['下单日期']) errors.push(`第${rowNum}行：下单日期不能为空`);
+                    if (!row['送货日期']) errors.push(`第${rowNum}行：送货日期不能为空`);
+                    if (!row['产品名称']) errors.push(`第${rowNum}行：产品名称不能为空`);
+                    if (!row['数量']) errors.push(`第${rowNum}行：数量不能为空`);
+                    if (!row['重量(吨)']) errors.push(`第${rowNum}行：重量不能为空`);
+                    if (!row['出发省']) errors.push(`第${rowNum}行：出发省不能为空`);
+                    if (!row['出发市']) errors.push(`第${rowNum}行：出发市不能为空`);
+                    if (!row['送达省']) errors.push(`第${rowNum}行：送达省不能为空`);
+                    if (!row['送达市']) errors.push(`第${rowNum}行：送达市不能为空`);
+                    if (!row['送达详细地址']) errors.push(`第${rowNum}行：送达详细地址不能为空`);
+
+                    // 验证省市是否存在
+                    const departureProvince = row['出发省'];
+                    const departureCity = row['出发市'];
+                    const destinationProvince = row['送达省'];
+                    const destinationCity = row['送达市'];
+
+                    if (!provinces_and_cities[departureProvince]) {
+                        errors.push(`第${rowNum}行：出发省份 "${departureProvince}" 不存在`);
+                    } else if (!provinces_and_cities[departureProvince].includes(departureCity)) {
+                        errors.push(`第${rowNum}行：出发城市 "${departureCity}" 不属于 ${departureProvince}`);
+                    }
+
+                    if (!provinces_and_cities[destinationProvince]) {
+                        errors.push(`第${rowNum}行：送达省份 "${destinationProvince}" 不存在`);
+                    } else if (!provinces_and_cities[destinationProvince].includes(destinationCity)) {
+                        errors.push(`第${rowNum}行：送达城市 "${destinationCity}" 不属于 ${destinationProvince}`);
+                    }
+
+                    // 验证数字格式
+                    const quantity = parseInt(row['数量'], 10);
+                    const weight = parseFloat(row['重量(吨)']);
+                    if (isNaN(quantity) || quantity <= 0) errors.push(`第${rowNum}行：数量必须为大于0的整数`);
+                    if (isNaN(weight) || weight <= 0) errors.push(`第${rowNum}行：重量必须为大于0的数字`);
+
                     return {
                         order_number: row['订单号'],
                         order_date: row['下单日期'],
-                        customer_info: row['客户信息'],
+                        delivery_date: row['送货日期'],
                         product_name: row['产品名称'],
-                        quantity: parseInt(row['数量'], 10),
-                        weight: parseFloat(row['重量(吨)']),
-                        departure_province: departure.substring(0, 2) || '',
-                        departure_city: departure.substring(2) || '',
-                        destination_province: destination.substring(0, 2) || '',
-                        destination_city: destination.substring(2, 4) || '',
-                        destination_address: destination.substring(4) || '',
-                        remark: row['备注']
+                        quantity: quantity,
+                        weight: weight,
+                        departure_province: departureProvince,
+                        departure_city: departureCity,
+                        destination_province: destinationProvince,
+                        destination_city: destinationCity,
+                        destination_address: row['送达详细地址'],
+                        remark: row['备注'] || ''
                     };
                 });
 
+                // 如果有错误，显示错误信息并终止导入
+                if (errors.length > 0) {
+                    message.error(
+                        <div>
+                            <div>导入数据有误：</div>
+                            {errors.map((err, index) => (
+                                <div key={index}>{err}</div>
+                            ))}
+                        </div>
+                    );
+                    return;
+                }
+
+                // 验证项目是否存在
+                const projectName = form.getFieldValue('project_name');
+                if (!projectName) {
+                    message.error('请先选择项目');
+                    return;
+                }
+
+                const project = projects.find(p => p.project_name === projectName);
+                if (!project) {
+                    message.error('所选项目不存在');
+                    return;
+                }
+
+                // 提交数据到后端
                 const response = await axios.post(`${backendUrl}/api/order/import`, {
-                    project_id: form.getFieldValue('project_name'), // 假设project_name存储的是project_id
+                    project_id: project.value,
+                    project_name: projectName,
                     orders: orders
                 });
 
                 if (response.data.success) {
                     message.success('导入成功');
                     fetchOrders();
+                } else {
+                    message.error(response.data.error_message || '导入失败');
                 }
             } catch (error) {
-                message.error('导入失败');
+                console.error('导入错误:', error);
+                message.error('导入失败：' + (error.response?.data?.error_message || error.message || '未知错误'));
             }
         };
         reader.readAsBinaryString(file);
@@ -305,13 +421,14 @@ export const Order = () => {
                                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                             }
                             onChange={(value) => {
-                                form.setFieldValue('project_name', value);
+                                const selectedProject = projects.find(p => p.value === value);
+                                form.setFieldValue('project_name', selectedProject?.project_name);
                                 fetchOrders({ current: 1 });
                             }}
                         />
                     </Form.Item>
                     <Space>
-                        <Button icon={<DownloadOutlined />}>
+                        <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
                             下载模板
                         </Button>
                         <Upload

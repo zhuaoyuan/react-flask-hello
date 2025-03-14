@@ -530,7 +530,6 @@ def get_orders():
         'order_number': order.order_number,
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
-        'customer_info': order.customer_info,
         'product_name': order.product_name,
         'quantity': order.quantity,
         'weight': float(order.weight) if order.weight else 0,
@@ -540,8 +539,7 @@ def get_orders():
         'destination_city': order.destination_city,
         'destination_address': order.destination_address,
         'remark': order.remark,
-        'amount': float(order.amount),
-        'status': order.status
+        'amount': float(order.amount)
     } for order in pagination.items]
     
     return success_response({
@@ -599,7 +597,6 @@ def export_orders():
         'order_number': order.order_number,
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
-        'customer_info': order.customer_info,
         'product_name': order.product_name,
         'quantity': order.quantity,
         'weight': float(order.weight) if order.weight else 0,
@@ -609,8 +606,7 @@ def export_orders():
         'destination_city': order.destination_city,
         'destination_address': order.destination_address,
         'remark': order.remark,
-        'amount': float(order.amount),
-        'status': order.status
+        'amount': float(order.amount)
     } for order in orders]
     
     return success_response({
@@ -624,20 +620,20 @@ def import_orders():
     :return: 导入结果
     """
     data = request.get_json()
-    if not data or 'orders' not in data or 'project_id' not in data:
+    if not data or 'orders' not in data or 'project_id' not in data or 'project_name' not in data:
         return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
     
     try:
+        # 验证项目ID和项目名称是否匹配
         project = ProjectInfo.query.get(data['project_id'])
         if not project:
             return error_response(ErrorCode.BAD_REQUEST, '项目不存在')
+        if project.project_name != data['project_name']:
+            return error_response(ErrorCode.BAD_REQUEST, '项目ID与项目名称不匹配')
 
         new_orders = []
         for order_data in data['orders']:
-            # 检查订单号是否已存在
-            if Order.query.filter_by(order_number=order_data['order_number']).first():
-                continue
-            
+
             # 创建新订单
             new_order = Order(
                 project_id=project.id,
@@ -645,7 +641,6 @@ def import_orders():
                 order_number=order_data['order_number'],
                 order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
                 delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
-                customer_info=order_data['customer_info'],
                 product_name=order_data['product_name'],
                 quantity=order_data['quantity'],
                 weight=order_data['weight'],
@@ -655,8 +650,7 @@ def import_orders():
                 destination_city=order_data['destination_city'],
                 destination_address=order_data.get('destination_address'),
                 remark=order_data.get('remark'),
-                amount=order_data.get('amount', 0),
-                status='新建'
+                amount=order_data.get('amount', 0)
             )
             new_orders.append(new_order)
         

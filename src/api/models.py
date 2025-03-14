@@ -106,7 +106,6 @@ class Order(db.Model):
     order_number = db.Column(db.String(50), nullable=False, unique=True, comment='订单号')
     order_date = db.Column(db.Date, nullable=False, comment='下单日期')
     delivery_date = db.Column(db.Date, nullable=False, comment='发货日期')
-    customer_info = db.Column(db.String(255), nullable=False, comment='客户信息')
     product_name = db.Column(db.String(255), nullable=False, comment='产品名称')
     quantity = db.Column(db.Integer, nullable=False, comment='数量')
     weight = db.Column(db.DECIMAL(10,3), nullable=False, comment='重量(吨)')
@@ -117,7 +116,6 @@ class Order(db.Model):
     destination_address = db.Column(db.String(500), nullable=True, comment='送达详细地址')
     remark = db.Column(db.String(500), nullable=True, comment='备注')
     amount = db.Column(db.Numeric(10, 2), nullable=False, comment='金额')
-    status = db.Column(db.String(20), nullable=False, comment='订单状态')
 
     def __repr__(self):
         return f'<Order {self.order_number}>'
@@ -130,7 +128,6 @@ class Order(db.Model):
             'order_number': self.order_number,
             'order_date': self.order_date.isoformat() if self.order_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
-            'customer_info': self.customer_info,
             'product_name': self.product_name,
             'quantity': self.quantity,
             'weight': float(self.weight) if self.weight else 0,
@@ -140,6 +137,5 @@ class Order(db.Model):
             'destination_city': self.destination_city,
             'destination_address': self.destination_address,
             'remark': self.remark,
-            'amount': float(self.amount) if self.amount else 0,
-            'status': self.status
+            'amount': float(self.amount) if self.amount else 0
         }
