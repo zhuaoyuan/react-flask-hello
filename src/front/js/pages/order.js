@@ -282,28 +282,33 @@ export const Order = () => {
                 </div>
 
                 <Form form={form} layout="inline" style={{ marginBottom: '16px' }}>
-                    <Form.Item label="下单日期" name="order_date" style={{ marginBottom: '8px' }}>
-                        <RangePicker style={{ width: '360px' }} />
-                    </Form.Item>
-                    <Form.Item label="发货日期" name="delivery_date" style={{ marginBottom: '8px' }}>
-                        <RangePicker style={{ width: '360px' }} />
-                    </Form.Item>
-                    <Form.Item label="订单号" name="order_number" style={{ marginBottom: '8px' }}>
-                        <Input placeholder="请输入订单号" style={{ width: '240px' }} />
-                    </Form.Item>
-                    <Form.Item label="送达城市" name="destination" style={{ marginBottom: '8px' }}>
-                        <Input placeholder="请输入送达城市" style={{ width: '240px' }} />
-                    </Form.Item>
-                    <Form.Item style={{ marginBottom: '8px' }}>
-                        <Space>
-                            <Button type="primary" onClick={handleSearch}>
-                                查询
-                            </Button>
-                            <Button onClick={handleReset}>
-                                重置
-                            </Button>
-                        </Space>
-                    </Form.Item>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ flex: 1, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <Form.Item label="下单日期" name="order_date">
+                                <RangePicker style={{ width: '360px' }} />
+                            </Form.Item>
+                            <Form.Item label="发货日期" name="delivery_date">
+                                <RangePicker style={{ width: '360px' }} />
+                            </Form.Item>
+                            <Form.Item label="订单号" name="order_number">
+                                <Input placeholder="请输入订单号" style={{ width: '240px' }} />
+                            </Form.Item>
+                            <Form.Item label="送达城市" name="destination">
+                                <Input placeholder="请输入送达城市" style={{ width: '240px' }} />
+                            </Form.Item>
+                            <Form.Item style={{ marginLeft: 'auto', marginRight: 0 }}>
+                            <Space>
+                                <Button type="primary" onClick={handleSearch}>
+                                    查询
+                                </Button>
+                                <Button onClick={handleReset}>
+                                    重置
+                                </Button>
+                            </Space>
+                        </Form.Item>
+                        </div>
+                        
+                    </div>
                 </Form>
 
                 <Table
