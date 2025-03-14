@@ -1,33 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, DatePicker, Table, Upload } from 'antd';
+import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card } from 'antd';
 import { SearchOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
+
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
 export const Order = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
+    const [projects, setProjects] = useState([]);
+    const [projectLoading, setProjectLoading] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 10,
         total: 0
     });
 
+    // 获取项目列表
+    const fetchProjects = async () => {
+        setProjectLoading(true);
+        try {
+            const response = await axios.post(`${backendUrl}/api/project/list`, {
+                search_query: '',
+                page: 1,
+                per_page: 100
+            });
+            if (response.data.data) {
+                setProjects(response.data.data.map(item => ({
+                    label: item.project_name,
+                    value: item.project_name
+                })));
+            } else {
+                message.error('获取项目列表失败');
+            }
+        } catch (error) {
+            message.error('获取项目列表失败');
+        } finally {
+            setProjectLoading(false);
+        }
+    };
+
     // 获取订单列表
     const fetchOrders = async (params = {}) => {
         setLoading(true);
         try {
+            const orderDate = form.getFieldValue('order_date');
+            const deliveryDate = form.getFieldValue('delivery_date');
+            
             const response = await axios.post(`${backendUrl}/api/order/list`, {
                 page: params.current || pagination.current,
                 per_page: params.pageSize || pagination.pageSize,
+                project_name: form.getFieldValue('project_name'),
                 order_number: form.getFieldValue('order_number'),
-                order_date: form.getFieldValue('order_date')?.format('YYYY-MM-DD'),
-                delivery_date: form.getFieldValue('delivery_date')?.format('YYYY-MM-DD'),
+                order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
+                order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
+                delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
+                delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
                 destination: form.getFieldValue('destination')
             });
 
@@ -50,6 +83,7 @@ export const Order = () => {
     };
 
     useEffect(() => {
+        fetchProjects();
         fetchOrders();
     }, []);
 
@@ -63,82 +97,48 @@ export const Order = () => {
 
     // 处理搜索
     const handleSearch = () => {
-        fetchOrders({
-            current: 1,
-            pageSize: pagination.pageSize,
-        });
+        fetchOrders({ current: 1 });
     };
 
     // 处理重置
     const handleReset = () => {
         form.resetFields();
-        fetchOrders({
-            current: 1,
-            pageSize: pagination.pageSize,
-        });
+        fetchOrders({ current: 1 });
     };
 
     // 导出订单
     const handleExport = async () => {
         try {
+            const orderDate = form.getFieldValue('order_date');
+            const deliveryDate = form.getFieldValue('delivery_date');
+            
             const response = await axios.post(`${backendUrl}/api/order/export`, {
                 order_number: form.getFieldValue('order_number'),
-                order_date: form.getFieldValue('order_date')?.format('YYYY-MM-DD'),
-                delivery_date: form.getFieldValue('delivery_date')?.format('YYYY-MM-DD'),
+                order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
+                order_date_end: orderDate?.[1]?.format('YYYY-MM-DD'),
+                delivery_date_start: deliveryDate?.[0]?.format('YYYY-MM-DD'),
+                delivery_date_end: deliveryDate?.[1]?.format('YYYY-MM-DD'),
                 destination: form.getFieldValue('destination')
             });
 
             if (response.data.success) {
                 const orders = response.data.result.items;
-                
-                // 创建工作簿
                 const wb = XLSX.utils.book_new();
-                
-                // 转换数据格式
                 const exportData = orders.map(order => ({
                     '订单号': order.order_number,
                     '下单日期': order.order_date,
-                    '发货日期': order.delivery_date,
                     '客户信息': order.customer_info,
                     '货物信息': order.cargo_info,
                     '出发地': order.departure,
                     '送达地': order.destination,
-                    '运输信息': order.transport_info || '',
-                    '金额': order.amount,
-                    '备注': order.remark || '',
-                    '状态': order.status
+                    '备注': order.remark || ''
                 }));
-                
-                // 创建工作表
                 const ws = XLSX.utils.json_to_sheet(exportData);
-                
-                // 设置列宽
-                const wscols = [
-                    {wch: 15}, // 订单号
-                    {wch: 12}, // 下单日期
-                    {wch: 12}, // 发货日期
-                    {wch: 20}, // 客户信息
-                    {wch: 30}, // 货物信息
-                    {wch: 20}, // 出发地
-                    {wch: 20}, // 送达地
-                    {wch: 30}, // 运输信息
-                    {wch: 10}, // 金额
-                    {wch: 20}, // 备注
-                    {wch: 10}  // 状态
-                ];
-                ws['!cols'] = wscols;
-                
-                // 将工作表添加到工作簿
                 XLSX.utils.book_append_sheet(wb, ws, '订单列表');
-                
-                // 下载文件
                 XLSX.writeFile(wb, `订单列表_${dayjs().format('YYYY-MM-DD')}.xlsx`);
                 message.success('导出成功');
-            } else {
-                message.error('导出失败');
             }
         } catch (error) {
-            console.error('导出订单错误:', error);
             message.error('导出失败');
         }
     };
@@ -153,35 +153,26 @@ export const Order = () => {
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-                // 转换数据格式
+                
                 const orders = jsonData.map(row => ({
                     order_number: row['订单号'],
                     order_date: row['下单日期'],
-                    delivery_date: row['发货日期'],
                     customer_info: row['客户信息'],
                     cargo_info: row['货物信息'],
                     departure: row['出发地'],
                     destination: row['送达地'],
-                    transport_info: row['运输信息'],
-                    amount: Number(row['金额']),
-                    remark: row['备注'],
-                    status: row['状态']
+                    remark: row['备注']
                 }));
 
-                // 发送导入请求
                 const response = await axios.post(`${backendUrl}/api/order/import`, {
                     orders: orders
                 });
 
                 if (response.data.success) {
-                    message.success(`成功导入 ${response.data.result.imported_count} 条订单`);
+                    message.success('导入成功');
                     fetchOrders();
-                } else {
-                    message.error(response.data.error_message || '导入失败');
                 }
             } catch (error) {
-                console.error('导入订单错误:', error);
                 message.error('导入失败');
             }
         };
@@ -194,53 +185,44 @@ export const Order = () => {
         {
             title: '订单号',
             dataIndex: 'order_number',
-            key: 'order_number',
-            width: 120,
+            width: 140,
         },
         {
             title: '下单日期',
             dataIndex: 'order_date',
-            key: 'order_date',
             width: 100,
         },
         {
             title: '客户信息',
             dataIndex: 'customer_info',
-            key: 'customer_info',
-            width: 150,
+            width: 120,
         },
         {
             title: '货物信息',
             dataIndex: 'cargo_info',
-            key: 'cargo_info',
             width: 200,
-            ellipsis: true,
+            render: (text) => (
+                <div style={{ whiteSpace: 'pre-line' }}>
+                    {text?.split('\n').map((line, index) => (
+                        <div key={index}>{line}</div>
+                    ))}
+                </div>
+            )
         },
         {
             title: '出发地',
             dataIndex: 'departure',
-            key: 'departure',
             width: 120,
         },
         {
-            title: '送达地',
+            title: '送达地址',
             dataIndex: 'destination',
-            key: 'destination',
-            width: 120,
-        },
-        {
-            title: '运输信息',
-            dataIndex: 'transport_info',
-            key: 'transport_info',
-            width: 150,
-            ellipsis: true,
+            width: 200,
         },
         {
             title: '备注',
             dataIndex: 'remark',
-            key: 'remark',
-            width: 150,
-            ellipsis: true,
+            width: 120,
         },
         {
             title: '操作',
@@ -257,71 +239,88 @@ export const Order = () => {
 
     return (
         <div style={{ padding: '24px' }}>
-            <Form
-                form={form}
-                layout="vertical"
-                onFinish={handleSearch}
-            >
-                <div style={{ marginBottom: '24px' }}>
+            <Card style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Form.Item label="选择项目" style={{ marginBottom: 0 }}>
+                        <Select
+                            placeholder="请选择项目"
+                            style={{ width: '240px' }}
+                            options={projects}
+                            loading={projectLoading}
+                            allowClear
+                            showSearch
+                            filterOption={(input, option) =>
+                                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                            }
+                            onChange={(value) => {
+                                form.setFieldValue('project_name', value);
+                                fetchOrders({ current: 1 });
+                            }}
+                        />
+                    </Form.Item>
                     <Space>
-                        <Form.Item label="选择客户" style={{ marginBottom: 0 }}>
-                            <Input placeholder="请选择客户" style={{ width: '200px' }} />
-                        </Form.Item>
+                        <Button icon={<DownloadOutlined />}>
+                            下载模板
+                        </Button>
+                        <Upload
+                            accept=".xlsx,.xls"
+                            beforeUpload={handleImport}
+                            showUploadList={false}
+                        >
+                            <Button type="primary" icon={<UploadOutlined />}>导入订单</Button>
+                        </Upload>
+                    </Space>
+                </div>
+            </Card>
+
+            <Card>
+                <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '14px' }}>订单列表</div>
+                    <Button type="primary" onClick={handleExport}>
+                        导出订单
+                    </Button>
+                </div>
+
+                <Form form={form} layout="inline" style={{ marginBottom: '16px' }}>
+                    <Form.Item label="下单日期" name="order_date" style={{ marginBottom: '8px' }}>
+                        <RangePicker style={{ width: '360px' }} />
+                    </Form.Item>
+                    <Form.Item label="发货日期" name="delivery_date" style={{ marginBottom: '8px' }}>
+                        <RangePicker style={{ width: '360px' }} />
+                    </Form.Item>
+                    <Form.Item label="订单号" name="order_number" style={{ marginBottom: '8px' }}>
+                        <Input placeholder="请输入订单号" style={{ width: '240px' }} />
+                    </Form.Item>
+                    <Form.Item label="送达城市" name="destination" style={{ marginBottom: '8px' }}>
+                        <Input placeholder="请输入送达城市" style={{ width: '240px' }} />
+                    </Form.Item>
+                    <Form.Item style={{ marginBottom: '8px' }}>
                         <Space>
-                            <Button type="primary" icon={<DownloadOutlined />} onClick={handleExport}>
-                                下载模板
+                            <Button type="primary" onClick={handleSearch}>
+                                查询
                             </Button>
-                            <Upload
-                                accept=".xlsx,.xls"
-                                beforeUpload={handleImport}
-                                showUploadList={false}
-                            >
-                                <Button icon={<UploadOutlined />}>导入订单</Button>
-                            </Upload>
+                            <Button onClick={handleReset}>
+                                重置
+                            </Button>
                         </Space>
-                    </Space>
-                </div>
+                    </Form.Item>
+                </Form>
 
-                <div style={{ marginBottom: '24px' }}>
-                    <Space>
-                        <Form.Item label="下单日期" name="order_date">
-                            <DatePicker style={{ width: '200px' }} />
-                        </Form.Item>
-                        <Form.Item label="发货日期" name="delivery_date">
-                            <DatePicker style={{ width: '200px' }} />
-                        </Form.Item>
-                        <Form.Item label="订单号" name="order_number">
-                            <Input placeholder="请输入订单号" style={{ width: '200px' }} />
-                        </Form.Item>
-                        <Form.Item label="送达城市" name="destination">
-                            <Input placeholder="请输入送达城市" style={{ width: '200px' }} />
-                        </Form.Item>
-                        <Form.Item>
-                            <Space>
-                                <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-                                    查询
-                                </Button>
-                                <Button onClick={handleReset}>重置</Button>
-                            </Space>
-                        </Form.Item>
-                    </Space>
-                </div>
-            </Form>
-
-            <Table
-                columns={columns}
-                dataSource={data}
-                pagination={{
-                    ...pagination,
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total) => `共 ${total} 条记录`
-                }}
-                onChange={handleTableChange}
-                loading={loading}
-                scroll={{ x: 1500 }}
-                rowKey="id"
-            />
+                <Table
+                    columns={columns}
+                    dataSource={data}
+                    pagination={{
+                        ...pagination,
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total) => `共 ${total} 条记录`
+                    }}
+                    onChange={handleTableChange}
+                    loading={loading}
+                    rowKey="id"
+                    size="middle"
+                />
+            </Card>
         </div>
     );
 }; 
