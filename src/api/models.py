@@ -116,6 +116,13 @@ class Order(db.Model):
     destination_address = db.Column(db.String(500), nullable=True, comment='送达详细地址')
     remark = db.Column(db.String(500), nullable=True, comment='备注')
     amount = db.Column(db.Numeric(10, 2), nullable=False, comment='金额')
+    
+    # 新增承运人相关字段
+    carrier_type = db.Column(db.Integer, nullable=False, default=1, comment='承运类型：1-司机直送，2-承运商')
+    carrier_name = db.Column(db.String(50), nullable=True, comment='承运人名称')
+    carrier_plate = db.Column(db.String(20), nullable=True, comment='承运人车牌')
+    carrier_phone = db.Column(db.String(20), nullable=True, comment='承运人联系方式')
+    carrier_fee = db.Column(db.Numeric(10, 2), nullable=True, comment='运费')
 
     def __repr__(self):
         return f'<Order {self.order_number}>'
@@ -137,5 +144,11 @@ class Order(db.Model):
             'destination_city': self.destination_city,
             'destination_address': self.destination_address,
             'remark': self.remark,
-            'amount': float(self.amount) if self.amount else 0
+            'amount': float(self.amount) if self.amount else 0,
+            # 新增字段的序列化
+            'carrier_type': self.carrier_type,
+            'carrier_name': self.carrier_name,
+            'carrier_plate': self.carrier_plate,
+            'carrier_phone': self.carrier_phone,
+            'carrier_fee': float(self.carrier_fee) if self.carrier_fee else 0
         }

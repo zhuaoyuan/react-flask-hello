@@ -174,6 +174,11 @@ export const Order = () => {
                     '重量(吨)': order.weight,
                     '出发地': `${order.departure_province}${order.departure_city}`,
                     '送达地': `${order.destination_province}${order.destination_city}${order.destination_address || ''}`,
+                    '承运类型': order.carrier_type === 1 ? '司机直送' : '承运商',
+                    '承运人名称': order.carrier_name || '',
+                    '承运人车牌': order.carrier_plate || '',
+                    '承运人电话': order.carrier_phone || '',
+                    '运费': order.carrier_fee || '',
                     '备注': order.remark || ''
                 }));
                 const ws = XLSX.utils.json_to_sheet(exportData);
@@ -423,23 +428,23 @@ export const Order = () => {
         {
             title: '订单号',
             dataIndex: 'order_number',
-            width: 140,
+            width: 160,
         },
         {
             title: '下单日期',
             dataIndex: 'order_date',
-            width: 100,
+            width: 120,
         },
         {
             title: '客户报价',
             dataIndex: 'amount',
-            width: 120,
+            width: 140,
             render: (text) => `¥${text.toFixed(2)}`
         },
         {
             title: '货物信息',
             dataIndex: 'cargo_info',
-            width: 200,
+            width: 240,
             render: (text) => (
                 <div style={{ whiteSpace: 'pre-line' }}>
                     {text?.split('\n').map((line, index) => (
@@ -451,22 +456,49 @@ export const Order = () => {
         {
             title: '出发地',
             dataIndex: 'departure',
-            width: 120,
+            width: 180,
         },
         {
             title: '送达地址',
             dataIndex: 'destination',
+            width: 300,
+        },
+        {
+            title: '承运人',
+            dataIndex: 'carrier',
             width: 200,
+            render: (_, record) => (
+                <div style={{ whiteSpace: 'pre-line' }}>
+                    {[
+                        record.carrier_name,
+                        record.carrier_plate,
+                        record.carrier_phone
+                    ].filter(Boolean).join('\n') || '-'}
+                </div>
+            )
+        },
+        {
+            title: '运费',
+            dataIndex: 'carrier_fee',
+            width: 120,
+            render: (text) => text ? `¥${Number(text).toFixed(2)}` : '-'
+        },
+        {
+            title: '承运类型',
+            dataIndex: 'carrier_type',
+            width: 120,
+            render: (text) => text === 1 ? '司机直送' : '承运商'
         },
         {
             title: '备注',
             dataIndex: 'remark',
-            width: 120,
+            width: 200,
         },
         {
             title: '操作',
             key: 'action',
             width: 120,
+            fixed: 'right',
             render: (_, record) => (
                 <Space>
                     <Button type="link" size="small" onClick={() => handleEdit(record)}>编辑</Button>
@@ -581,6 +613,10 @@ export const Order = () => {
                     loading={loading}
                     rowKey="id"
                     size="middle"
+                    scroll={{
+                        x: 1900,
+                        y: 'calc(100vh - 380px)',
+                    }}
                 />
             </Card>
 
