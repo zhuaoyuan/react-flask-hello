@@ -13,13 +13,20 @@ def transactional(f):
         try:
             # 设置事务隔离级别为REPEATABLE READ
             db.session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
-            db.session.begin_nested()
+            
+            # 执行函数
             result = f(*args, **kwargs)
+            
+            # 提交事务
             db.session.commit()
             return result
         except Exception as e:
+            # 回滚事务
             db.session.rollback()
             raise e
+        finally:
+            # 确保会话被正确清理
+            db.session.remove()
     return decorated_function
 
 project = Blueprint('project', __name__)
@@ -182,17 +189,45 @@ def delete_project():
         
         # 逻辑删除项目
         project.is_deleted = project.id
+        print(f"[事务处理] 设置项目is_deleted={project.id}")
         db.session.add(project)
+        db.session.flush()  # 立即刷新确保更新生效
         
-        # 逻辑删除关联的价格配置
-        ProjectPriceConfig.query.filter_by(
+        # 验证项目更新是否成功
+        db.session.refresh(project)  # 从数据库重新加载记录
+        print(f"[事务验证1] 刷新后项目is_deleted={project.is_deleted}")
+        
+        # 查找并逻辑删除关联的价格配置
+        price_configs = ProjectPriceConfig.query.filter_by(
             project_id=project.id,
             is_deleted=0
-        ).update({
-            'is_deleted': ProjectPriceConfig.id
-        }, synchronize_session=False)
+        ).with_for_update().all()
         
+        print(f"[事务处理] 找到{len(price_configs)}条关联的价格配置")
+        for price_config in price_configs:
+            price_config.is_deleted = price_config.id
+            print(f"[事务处理] 设置价格配置is_deleted={price_config.id}")
+            db.session.add(price_config)
+        
+        db.session.flush()  # 立即刷新确保所有更新生效
+        
+        # 再次验证项目状态
+        db.session.expire_all()  # 使所有对象过期，强制重新加载
+        check_project = ProjectInfo.query.get(project.id)
+        print(f"[事务验证2] 重新查询项目is_deleted={check_project.is_deleted}")
+        
+        # 验证价格配置更新
+        for price_config in price_configs:
+            db.session.refresh(price_config)
+            print(f"[事务验证3] 价格配置{price_config.id} is_deleted={price_config.is_deleted}")
+        
+        print(f"[事务处理] 删除项目关联的{len(price_configs)}条价格配置")
         print("[事务完成] 项目删除成功")
+        
+        # 最后一次验证
+        final_check = ProjectInfo.query.get(project.id)
+        print(f"[事务验证4] 最终验证项目is_deleted={final_check.is_deleted}")
+        
         return success_response()
     except Exception as e:
         print(f"[事务回滚] 项目删除失败：{str(e)}")

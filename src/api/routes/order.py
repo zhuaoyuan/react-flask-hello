@@ -12,14 +12,22 @@ def transactional(f):
         try:
             # 设置事务隔离级别为REPEATABLE READ
             db.session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
-            db.session.begin_nested()
+            
+            # 执行函数
             result = f(*args, **kwargs)
+            
+            # 提交事务
             db.session.commit()
             return result
         except Exception as e:
+            # 回滚事务
             db.session.rollback()
             raise e
+        finally:
+            # 确保会话被正确清理
+            db.session.remove()
     return decorated_function
+
 
 order = Blueprint('order', __name__)
 # 注册全局错误处理器
