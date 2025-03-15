@@ -3,6 +3,23 @@ from api.models import db, Order, ProjectInfo, ProjectPriceConfig, DeliveryImpor
 from api.enum.error_code import ErrorCode
 from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
+from functools import wraps
+from sqlalchemy import text
+
+def transactional(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # 设置事务隔离级别为REPEATABLE READ
+            db.session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            db.session.begin_nested()
+            result = f(*args, **kwargs)
+            db.session.commit()
+            return result
+        except Exception as e:
+            db.session.rollback()
+            raise e
+    return decorated_function
 
 order = Blueprint('order', __name__)
 # 注册全局错误处理器
@@ -128,6 +145,7 @@ def export_orders():
     })
 
 @order.route('/import', methods=['POST'])
+@transactional
 def import_orders():
     """导入订单"""
     data = request.get_json()
@@ -135,6 +153,7 @@ def import_orders():
         return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
     
     try:
+        print(f"[事务开始] 导入订单，数据量：{len(data['orders'])}")
         project = ProjectInfo.query.get(data['project_id'])
         if not project:
             return error_response(ErrorCode.BAD_REQUEST, '项目不存在')
@@ -154,11 +173,11 @@ def import_orders():
         order_numbers = {order_data['order_number'] for order_data in data['orders']}
         max_seq_dict = {}
         for order_number in order_numbers:
-            # 查询数据库中该订单号下最大的序号
+            # 查询数据库中该订单号下最大的序号，添加行锁防止并发导入
             max_seq = 0
             existing_orders = Order.query.filter(
                 Order.sub_order_number.like(f"{order_number}-%")
-            ).all()
+            ).with_for_update().all()
             for order in existing_orders:
                 try:
                     seq = int(order.sub_order_number.split('-')[-1])
@@ -208,17 +227,19 @@ def import_orders():
             return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
         
         if new_orders:
+            print(f"[事务处理] 准备保存{len(new_orders)}个新订单")
             db.session.add_all(new_orders)
-            db.session.commit()
+            print("[事务完成] 订单导入成功")
             return success_response({'imported_count': len(new_orders)})
         else:
             return error_response(ErrorCode.BAD_REQUEST, '没有新的订单需要导入')
             
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+        print(f"[事务回滚] 订单导入失败：{str(e)}")
+        raise  # 让装饰器处理回滚
 
 @order.route('/delete', methods=['POST'])
+@transactional
 def delete_order():
     """删除订单"""
     data = request.json
@@ -228,14 +249,59 @@ def delete_order():
         return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
 
     try:
+        print(f"[事务开始] 删除订单，ID：{id}，子订单号：{order.sub_order_number}")
+        
+        # 查找该子订单所在的status=0的批次记录，添加行锁
+        existing_record = DeliveryImportRecord.query.filter_by(
+            sub_order_number=order.sub_order_number,
+            status=0
+        ).with_for_update().first()
+        
+        if existing_record:
+            print(f"[事务处理] 发现关联的送货记录，批次号：{existing_record.batch_number}")
+            # 获取同一批次下的所有子订单记录，添加行锁
+            all_suborders_of_batch = DeliveryImportRecord.query.filter_by(
+                batch_number=existing_record.batch_number,
+                status=0
+            ).with_for_update().all()
+            
+            # 收集需要重置送货信息的子订单号（不包括要删除的子订单）
+            sub_order_numbers_to_reset = {
+                suborder.sub_order_number for suborder in all_suborders_of_batch 
+                if suborder.sub_order_number != order.sub_order_number
+            }
+            
+            # 更新该批次所有记录的状态
+            DeliveryImportRecord.query.filter_by(
+                batch_number=existing_record.batch_number,
+                status=0
+            ).update({
+                'status': existing_record.id  # 使用记录ID而不是类属性
+            }, synchronize_session=False)
+            
+            # 重置其他子订单的送货信息
+            if sub_order_numbers_to_reset:
+                print(f"[事务处理] 重置{len(sub_order_numbers_to_reset)}个关联订单的送货信息")
+                Order.query.filter(
+                    Order.sub_order_number.in_(sub_order_numbers_to_reset)
+                ).update({
+                    'carrier_type': None,
+                    'carrier_name': None,
+                    'carrier_phone': None,
+                    'carrier_plate': None,
+                    'carrier_fee': None
+                }, synchronize_session=False)
+
+        # 删除订单
         db.session.delete(order)
-        db.session.commit()
+        print("[事务完成] 订单删除成功")
         return success_response()
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+        print(f"[事务回滚] 订单删除失败：{str(e)}")
+        raise  # 让装饰器处理回滚
 
 @order.route('/edit', methods=['POST'])
+@transactional
 def edit_order():
     """编辑订单"""
     data = request.json
@@ -243,7 +309,8 @@ def edit_order():
         return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
 
     try:
-        order = Order.query.get(data['id'])
+        # 使用行锁查询订单
+        order = Order.query.with_for_update().get(data['id'])
         if not order:
             return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
 
@@ -280,13 +347,13 @@ def edit_order():
         unit_price = price_config_dict[route_key]
         order.amount = float(order.weight) * unit_price
 
-        db.session.commit()
         return success_response()
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+        print(f"[事务回滚] 订单编辑失败：{str(e)}")
+        raise  # 让装饰器处理回滚
 
 @order.route('/import_delivery', methods=['POST'])
+@transactional
 def import_delivery():
     """导入送货信息"""
     data = request.get_json()
@@ -294,9 +361,10 @@ def import_delivery():
         return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
     
     try:
+        print(f"[事务开始] 导入送货信息，数据量：{len(data['deliveries'])}")
         errors = []
-        batch_numbers_to_update = set()  # 需要更新状态的batch_number集合
-        sub_order_numbers_to_reset = set()  # 需要重置承运信息的子订单号集合
+        batch_numbers_to_update = set()
+        sub_order_numbers_to_reset = set()
         
         # 预处理：检查子订单号是否有重复
         all_sub_order_numbers = []
@@ -338,24 +406,24 @@ def import_delivery():
             orders_info = []
             total_amount = 0
             for sub_order_number in delivery['sub_order_numbers']:
-                # 检查订单是否存在
-                order = Order.query.filter_by(sub_order_number=sub_order_number).first()
+                # 检查订单是否存在，并添加行锁
+                order = Order.query.filter_by(sub_order_number=sub_order_number).with_for_update().first()
                 if not order:
                     errors.append(f'子订单号 {sub_order_number} 不存在')
                     continue
                 
-                # 检查DeliveryImportRecord中是否有status=0的记录
+                # 检查DeliveryImportRecord中是否有status=0的记录，添加行锁
                 existing_record = DeliveryImportRecord.query.filter_by(
                     sub_order_number=sub_order_number,
                     status=0
-                ).first()
+                ).with_for_update().first()
                 if existing_record:
                     batch_numbers_to_update.add(existing_record.batch_number)
-                    # 获取同一批次下的所有子订单
+                    # 获取同一批次下的所有子订单，添加行锁
                     all_suborders_of_batch = DeliveryImportRecord.query.filter_by(
                         batch_number=existing_record.batch_number,
                         status=0
-                    ).all()
+                    ).with_for_update().all()
                     for suborder in all_suborders_of_batch:
                         sub_order_numbers_to_reset.add(suborder.sub_order_number)
 
@@ -367,9 +435,9 @@ def import_delivery():
                 total_amount += float(order.amount)
             
             if orders_info:  # 只有在有有效订单时才保存处理结果
-                # 为每条送货信息生成独立的批次号
-                current_timestamp = datetime.now().strftime('%Y%m%d%H%M%S')[:14]  # 限制长度为14位
-                new_batch_number = f'DL{current_timestamp}'
+                # 生成批次号（使用毫秒时间戳）
+                timestamp_ms = int(datetime.now().timestamp() * 1000)
+                new_batch_number = f'DL{timestamp_ms}'
                 
                 delivery_data[id(delivery)] = {
                     'carrier_info': delivery,
@@ -383,6 +451,7 @@ def import_delivery():
 
         # 第二步：更新旧记录的状态并重置对应订单的承运信息
         if batch_numbers_to_update:
+            print(f"[事务处理] 更新{len(batch_numbers_to_update)}个批次的状态")
             # 更新导入记录状态
             DeliveryImportRecord.query.filter(
                 DeliveryImportRecord.batch_number.in_(batch_numbers_to_update),
@@ -394,6 +463,7 @@ def import_delivery():
             # 重置对应订单的承运信息，但不重置本次要更新的订单
             sub_order_numbers_to_reset = sub_order_numbers_to_reset - set(all_sub_order_numbers)
             if sub_order_numbers_to_reset:
+                print(f"[事务处理] 重置{len(sub_order_numbers_to_reset)}个订单的送货信息")
                 Order.query.filter(
                     Order.sub_order_number.in_(sub_order_numbers_to_reset)
                 ).update({
@@ -448,14 +518,15 @@ def import_delivery():
 
         # 保存所有更改
         if new_records:
+            print(f"[事务处理] 创建{len(new_records)}条新的送货记录")
             db.session.add_all(new_records)
-        db.session.commit()
+        print("[事务完成] 送货信息导入成功")
 
         return success_response({
             'updated_count': len(updated_orders),
-            'batch_numbers': batch_numbers  # 返回所有新生成的批次号
+            'batch_numbers': batch_numbers
         })
             
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e)) 
+        print(f"[事务回滚] 送货信息导入失败：{str(e)}")
+        raise  # 让装饰器处理回滚 
