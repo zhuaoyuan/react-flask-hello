@@ -6,9 +6,10 @@ import os
 from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
+from flask_cors import CORS
 from api.utils import APIException, generate_sitemap
 from api.models import db
-from api.routes import api
+from api.routes import api, init_routes
 from api.admin import setup_admin
 from api.commands import setup_commands
 
@@ -16,7 +17,7 @@ from api.commands import setup_commands
 
 # 确定当前运行环境（开发/生产）
 # Determine current environment (development/production)
-ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
+ENV = os.getenv("FLASK_ENV")
 
 # 设置静态文件目录路径
 # Set static files directory path
@@ -43,7 +44,7 @@ if db_url is not None:
 else:
     # 默认使用SQLite数据库
     # Use SQLite database by default
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
+    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///test.db"
 
 # 禁用SQLAlchemy的修改跟踪
 # Disable SQLAlchemy modification tracking
@@ -51,8 +52,11 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # 初始化数据库迁移
 # Initialize database migration
-MIGRATE = Migrate(app, db, compare_type=True)
+MIGRATE = Migrate(app, db)
 db.init_app(app)
+
+# 允许CORS
+CORS(app)
 
 # 设置管理界面
 # Setup admin interface
@@ -62,9 +66,16 @@ setup_admin(app)
 # Setup CLI commands
 setup_commands(app)
 
-# 注册API蓝图，添加/api前缀
-# Register API blueprint with /api prefix
-app.register_blueprint(api, url_prefix='/api')
+# 注册API蓝图
+app.register_blueprint(api)
+
+# 初始化所有路由
+init_routes(app)
+
+# 处理/api/docs
+@app.route('/api/docs', methods=['GET'])
+def get_docs():
+    return jsonify(generate_sitemap(app))
 
 # 处理API异常，返回JSON格式的错误信息
 # Handle API exceptions and return JSON formatted error messages
