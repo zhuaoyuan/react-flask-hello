@@ -1,27 +1,12 @@
 from flask import request, jsonify, Blueprint
 from api.models import db, Order, ProjectInfo, ProjectPriceConfig
 from api.enum.error_code import ErrorCode
+from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
 
 order = Blueprint('order', __name__)
-
-# 成功响应处理函数
-def success_response(result=None):
-    return jsonify({
-        "success": True,
-        "result": result if result else {},
-        "error_code": ErrorCode.SUCCESS['code'],
-        "error_message": ErrorCode.SUCCESS['message']
-    })
-
-# 错误响应处理函数
-def error_response(error_code_enum, error_message=None):
-    return jsonify({
-        "success": False,
-        "result": {},
-        "error_code": error_code_enum['code'],
-        "error_message": error_message if error_message else error_code_enum['message']
-    })
+# 注册全局错误处理器
+register_error_handlers(order)
 
 @order.route('/list', methods=['POST'])
 def get_orders():

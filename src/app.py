@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
-from api.utils import APIException, generate_sitemap
+from api.utils import generate_sitemap
 from api.models import db
 from api.routes import api, init_routes
 from api.admin import setup_admin
@@ -77,11 +77,6 @@ init_routes(app)
 def get_docs():
     return jsonify(generate_sitemap(app))
 
-# 处理API异常，返回JSON格式的错误信息
-# Handle API exceptions and return JSON formatted error messages
-@app.errorhandler(APIException)
-def handle_invalid_usage(error):
-    return jsonify(error.to_dict()), error.status_code
 
 # 生成包含所有端点的站点地图
 # Generate sitemap with all endpoints

@@ -22,4 +22,4 @@ def init_routes(app):
 __all__ = ['api', 'init_routes', 'project', 'order']
 
 # 导出工具函数
-from .base import success_response, error_response, handle_exceptions 
+from api.utils import success_response, error_response, handle_exceptions 

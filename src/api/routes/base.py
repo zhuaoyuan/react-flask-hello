@@ -4,9 +4,7 @@ Base routing module containing common functionality and test endpoints
 """
 from flask import jsonify
 from api.enum.error_code import ErrorCode
-from functools import wraps
-import traceback
-import logging
+from api.utils import success_response, error_response, handle_exceptions
 from . import api
 
 # 成功响应处理函数
@@ -36,24 +34,6 @@ def error_response(error_code_enum, error_message=None):
         "error_code": error_code_enum['code'],
         "error_message": error_message if error_message else error_code_enum['message']
     })
-
-# 全局异常处理装饰器
-def handle_exceptions(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except Exception as e:
-            # 记录错误日志
-            logging.error(f"Error: {str(e)}")
-            logging.error(traceback.format_exc())
-            # 返回标准化的错误响应
-            return jsonify({
-                "success": False,
-                "message": str(e),
-                "error": traceback.format_exc()
-            }), 500
-    return decorated_function
 
 @api.route('/hello', methods=['GET'])
 @handle_exceptions

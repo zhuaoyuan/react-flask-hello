@@ -2,28 +2,13 @@ from flask import request, jsonify, Blueprint
 from api.models import db, ProjectInfo, ProjectPriceConfig
 from api.enum.error_code import ErrorCode
 from api.enum.provinces_and_cities import provinces_and_cities
+from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
 from sqlalchemy import or_
 
 project = Blueprint('project', __name__)
-
-# 成功响应处理函数
-def success_response(result=None):
-    return jsonify({
-        "success": True,
-        "result": result if result else {},
-        "error_code": ErrorCode.SUCCESS['code'],
-        "error_message": ErrorCode.SUCCESS['message']
-    })
-
-# 错误响应处理函数
-def error_response(error_code_enum, error_message=None):
-    return jsonify({
-        "success": False,
-        "result": {},
-        "error_code": error_code_enum['code'],
-        "error_message": error_message if error_message else error_code_enum['message']
-    })
+# 注册全局错误处理器
+register_error_handlers(project)
 
 # 定义承运类型
 TRANSPORT_TYPES = ['整车运输', '零担运输']
