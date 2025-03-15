@@ -487,7 +487,10 @@ export const Order = () => {
             title: '承运类型',
             dataIndex: 'carrier_type',
             width: 120,
-            render: (text) => text === 1 ? '司机直送' : '承运商'
+            render: (text) => {
+                if (text === null || text === undefined) return '-';
+                return text === 1 ? '司机直送' : '承运商';
+            }
         },
         {
             title: '备注',
