@@ -376,7 +376,7 @@ def import_delivery():
         batch_numbers_to_update = set()
         sub_order_numbers_to_reset = set()
         
-        # 预处理：检查子订单号是否有重复
+        # 预处理：收集所有子订单号
         all_sub_order_numbers = []
         for delivery in data['deliveries']:
             if 'sub_order_numbers' not in delivery:
@@ -393,6 +393,38 @@ def import_delivery():
         if duplicate_sub_orders:
             duplicate_details = [f"子订单号 {sub_order} 重复出现 {count} 次" for sub_order, count in duplicate_sub_orders.items()]
             return error_response(ErrorCode.BAD_REQUEST, f"发现重复的子订单号：\n{chr(10).join(duplicate_details)}")
+            
+        # 验证所有子订单号是否存在且属于同一个项目
+        project_id = None
+        project_name = None
+        invalid_orders = []
+        not_found_orders = []
+        
+        for sub_order_number in all_sub_order_numbers:
+            order = Order.query.filter_by(sub_order_number=sub_order_number, is_deleted=0).first()
+            if not order:
+                not_found_orders.append(sub_order_number)
+                continue
+                
+            if project_id is None:
+                project_id = order.project_id
+                project_name = order.project_name
+            elif order.project_id != project_id:
+                invalid_orders.append(f"子订单号 {sub_order_number} 属于项目 '{order.project_name}'，与其他订单所属项目 '{project_name}' 不一致")
+        
+        if not_found_orders:
+            errors.append(f"以下子订单号不存在：\n{chr(10).join(not_found_orders)}")
+        if invalid_orders:
+            errors.append(f"订单必须属于同一个项目：\n{chr(10).join(invalid_orders)}")
+        if errors:
+            return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
+            
+        # 验证项目是否存在
+        project = ProjectInfo.query.filter_by(id=project_id, is_deleted=0).first()
+        if not project:
+            return error_response(ErrorCode.BAD_REQUEST, f"项目 '{project_name}' 不存在或已被删除")
+            
+        print(f"[事务处理] 验证通过，所有订单属于项目：{project_name}")
         
         # 第一步：验证所有数据的合法性并预处理数据
         delivery_data = {}  # 用于存储每组送货信息的处理结果

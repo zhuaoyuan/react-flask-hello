@@ -1,5 +1,5 @@
 from flask import request, jsonify, Blueprint
-from api.models import db, ProjectInfo, ProjectPriceConfig
+from api.models import db, ProjectInfo, ProjectPriceConfig, Order
 from api.enum.error_code import ErrorCode
 from api.enum.provinces_and_cities import provinces_and_cities
 from api.utils import success_response, error_response, register_error_handlers
@@ -187,6 +187,18 @@ def delete_project():
     try:
         print(f"[事务开始] 删除项目，ID：{id}，项目名称：{project.project_name}")
         
+        # 查找并逻辑删除项目下的所有订单
+        orders = Order.query.filter_by(
+            project_id=project.id,
+            is_deleted=0
+        ).with_for_update().all()
+        
+        print(f"[事务处理] 找到{len(orders)}个关联订单")
+        for order in orders:
+            order.is_deleted = order.id
+            print(f"[事务处理] 设置订单{order.sub_order_number} is_deleted={order.id}")
+            db.session.add(order)
+        
         # 逻辑删除项目
         project.is_deleted = project.id
         print(f"[事务处理] 设置项目is_deleted={project.id}")
@@ -221,12 +233,17 @@ def delete_project():
             db.session.refresh(price_config)
             print(f"[事务验证3] 价格配置{price_config.id} is_deleted={price_config.is_deleted}")
         
-        print(f"[事务处理] 删除项目关联的{len(price_configs)}条价格配置")
+        # 验证订单更新
+        for order in orders:
+            db.session.refresh(order)
+            print(f"[事务验证4] 订单{order.sub_order_number} is_deleted={order.is_deleted}")
+        
+        print(f"[事务处理] 删除项目关联的{len(price_configs)}条价格配置和{len(orders)}个订单")
         print("[事务完成] 项目删除成功")
         
         # 最后一次验证
         final_check = ProjectInfo.query.get(project.id)
-        print(f"[事务验证4] 最终验证项目is_deleted={final_check.is_deleted}")
+        print(f"[事务验证5] 最终验证项目is_deleted={final_check.is_deleted}")
         
         return success_response()
     except Exception as e:
