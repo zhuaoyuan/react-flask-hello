@@ -15,6 +15,7 @@ import { Project } from "./pages/project";
 import { Price } from "./pages/price";
 import { Single } from "./pages/single";
 import { Order } from "./pages/order";
+import { Delivery } from './pages/delivery';
 import injectContext from "./store/appContext";
 
 import { Footer } from "./component/footer";
@@ -95,6 +96,7 @@ const MainLayout = () => {
                         <Route element={<Project />} path="/project" />
                         <Route element={<Price />} path="/price" />
                         <Route element={<Order />} path="/order" />
+                        <Route element={<Delivery />} path="/delivery" />
                         <Route element={<Single />} path="/single/:theid" />
                         <Route element={<h1>Not found!</h1>} />
                     </Routes>
