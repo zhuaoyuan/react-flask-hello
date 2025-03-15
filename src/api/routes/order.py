@@ -296,6 +296,25 @@ def import_delivery():
     try:
         errors = []
         batch_numbers_to_update = set()  # 需要更新状态的batch_number集合
+        sub_order_numbers_to_reset = set()  # 需要重置承运信息的子订单号集合
+        
+        # 预处理：检查子订单号是否有重复
+        all_sub_order_numbers = []
+        for delivery in data['deliveries']:
+            if 'sub_order_numbers' not in delivery:
+                errors.append('缺少子订单号列表')
+                continue
+            all_sub_order_numbers.extend(delivery['sub_order_numbers'])
+        
+        # 检查重复的子订单号
+        duplicate_sub_orders = {}
+        for sub_order_number in all_sub_order_numbers:
+            if all_sub_order_numbers.count(sub_order_number) > 1:
+                duplicate_sub_orders[sub_order_number] = all_sub_order_numbers.count(sub_order_number)
+        
+        if duplicate_sub_orders:
+            duplicate_details = [f"子订单号 {sub_order} 重复出现 {count} 次" for sub_order, count in duplicate_sub_orders.items()]
+            return error_response(ErrorCode.BAD_REQUEST, f"发现重复的子订单号：\n{chr(10).join(duplicate_details)}")
         
         # 第一步：验证所有数据的合法性并预处理数据
         delivery_data = {}  # 用于存储每组送货信息的处理结果
@@ -332,7 +351,14 @@ def import_delivery():
                 ).first()
                 if existing_record:
                     batch_numbers_to_update.add(existing_record.batch_number)
-                
+                    # 获取同一批次下的所有子订单
+                    all_suborders_of_batch = DeliveryImportRecord.query.filter_by(
+                        batch_number=existing_record.batch_number,
+                        status=0
+                    ).all()
+                    for suborder in all_suborders_of_batch:
+                        sub_order_numbers_to_reset.add(suborder.sub_order_number)
+
                 # 收集订单金额信息
                 orders_info.append({
                     'order': order,
@@ -342,7 +368,7 @@ def import_delivery():
             
             if orders_info:  # 只有在有有效订单时才保存处理结果
                 # 为每条送货信息生成独立的批次号
-                current_timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                current_timestamp = datetime.now().strftime('%Y%m%d%H%M%S')[:14]  # 限制长度为14位
                 new_batch_number = f'DL{current_timestamp}'
                 
                 delivery_data[id(delivery)] = {
@@ -355,14 +381,28 @@ def import_delivery():
         if errors:
             return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
 
-        # 第二步：更新旧记录的状态
+        # 第二步：更新旧记录的状态并重置对应订单的承运信息
         if batch_numbers_to_update:
+            # 更新导入记录状态
             DeliveryImportRecord.query.filter(
                 DeliveryImportRecord.batch_number.in_(batch_numbers_to_update),
                 DeliveryImportRecord.status == 0
             ).update({
                 'status': DeliveryImportRecord.id
             }, synchronize_session=False)
+            
+            # 重置对应订单的承运信息，但不重置本次要更新的订单
+            sub_order_numbers_to_reset = sub_order_numbers_to_reset - set(all_sub_order_numbers)
+            if sub_order_numbers_to_reset:
+                Order.query.filter(
+                    Order.sub_order_number.in_(sub_order_numbers_to_reset)
+                ).update({
+                    'carrier_type': None,
+                    'carrier_name': None,
+                    'carrier_phone': None,
+                    'carrier_plate': None,
+                    'carrier_fee': None
+                }, synchronize_session=False)
 
         # 第三步：更新订单信息并创建新的导入记录
         updated_orders = []
