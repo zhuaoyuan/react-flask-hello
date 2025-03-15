@@ -119,7 +119,7 @@ class Order(db.Model):
     amount = db.Column(db.Numeric(10, 2), nullable=False, comment='金额')
     
     # 新增承运人相关字段
-    carrier_type = db.Column(db.Integer, nullable=False, default=1, comment='承运类型：1-司机直送，2-承运商')
+    carrier_type = db.Column(db.Integer, nullable=True, comment='承运类型：1-司机直送，2-承运商')
     carrier_name = db.Column(db.String(50), nullable=True, comment='承运人名称')
     carrier_plate = db.Column(db.String(20), nullable=True, comment='承运人车牌')
     carrier_phone = db.Column(db.String(20), nullable=True, comment='承运人联系方式')
@@ -155,29 +155,19 @@ class Order(db.Model):
         }
     
 class DeliveryImportRecord(db.Model):
-    """
-    送货单导入记录模型
-    用于记录送货单导入的批次信息和状态
-    """
+    """送货导入记录表"""
     __tablename__ = 'delivery_import_record'
-    
-    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True, comment='自增ID')
-    order_id = db.Column(db.BigInteger, db.ForeignKey('order.id'), nullable=False, comment='订单ID')
-    batch_number = db.Column(db.String(50), nullable=False, comment='导入批次号')
-    status = db.Column(db.Integer, nullable=False, default=0, comment='状态：0-待处理，1-处理成功，2-处理失败')
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    batch_number = db.Column(db.String(20), nullable=False, comment='批次号')
+    sub_order_number = db.Column(db.String(60), nullable=False, comment='子订单号')
+    carrier_type = db.Column(db.Integer, nullable=False, comment='承运类型：1-司机直送，2-承运商')
+    carrier_name = db.Column(db.String(50), nullable=False, comment='承运人名称')
+    carrier_phone = db.Column(db.String(20), nullable=False, comment='承运人联系方式')
+    carrier_plate = db.Column(db.String(20), comment='承运人车牌')
+    carrier_fee = db.Column(db.Numeric(10, 2), comment='运费')
+    status = db.Column(db.Integer, nullable=False, default=0, comment='状态：0-最新，>0-历史记录(记录被更新时的ID)')
+    create_time = db.Column(db.DateTime, nullable=False, default=db.func.current_timestamp(), comment='创建时间')
 
     def __repr__(self):
-        """返回导入记录的字符串表示"""
-        return f'<DeliveryImportRecord {self.batch_number}>'
-
-    def to_dict(self):
-        """
-        将导入记录转换为字典格式
-        :return: 导入记录字典
-        """
-        return {
-            'id': self.id,
-            'order_id': self.order_id,
-            'batch_number': self.batch_number,
-            'status': self.status
-        }
+        return f'<DeliveryImportRecord {self.batch_number}-{self.sub_order_number}>'

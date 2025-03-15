@@ -1,5 +1,5 @@
 from flask import request, jsonify, Blueprint
-from api.models import db, Order, ProjectInfo, ProjectPriceConfig
+from api.models import db, Order, ProjectInfo, ProjectPriceConfig, DeliveryImportRecord
 from api.enum.error_code import ErrorCode
 from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
@@ -150,6 +150,23 @@ def import_orders():
             key = f"{config.departure_province}-{config.departure_city}-{config.destination_province}-{config.destination_city}"
             price_config_dict[key] = config.unit_price
 
+        # 预处理：获取所有涉及的订单号的最大序号
+        order_numbers = {order_data['order_number'] for order_data in data['orders']}
+        max_seq_dict = {}
+        for order_number in order_numbers:
+            # 查询数据库中该订单号下最大的序号
+            max_seq = 0
+            existing_orders = Order.query.filter(
+                Order.sub_order_number.like(f"{order_number}-%")
+            ).all()
+            for order in existing_orders:
+                try:
+                    seq = int(order.sub_order_number.split('-')[-1])
+                    max_seq = max(max_seq, seq)
+                except ValueError:
+                    continue
+            max_seq_dict[order_number] = max_seq
+
         new_orders = []
         errors = []
         for index, order_data in enumerate(data['orders']):
@@ -162,13 +179,10 @@ def import_orders():
             unit_price = price_config_dict[route_key]
             amount = float(order_data['weight']) * unit_price
 
-            # 生成子订单号
-            sub_order_number = f"{order_data['order_number']}-1"
-            # 检查子订单号是否已存在，如果存在则递增序号
-            seq = 1
-            while Order.query.filter_by(sub_order_number=sub_order_number).first():
-                seq += 1
-                sub_order_number = f"{order_data['order_number']}-{seq}"
+            # 生成子订单号，使用内存中维护的序号
+            order_number = order_data['order_number']
+            max_seq_dict[order_number] += 1
+            sub_order_number = f"{order_number}-{max_seq_dict[order_number]}"
 
             new_order = Order(
                 project_id=project.id,
@@ -281,34 +295,126 @@ def import_delivery():
     
     try:
         errors = []
-        updated_orders = []
+        batch_numbers_to_update = set()  # 需要更新状态的batch_number集合
         
+        # 第一步：验证所有数据的合法性并预处理数据
+        delivery_data = {}  # 用于存储每组送货信息的处理结果
         for delivery in data['deliveries']:
-            # 根据子订单号查找订单
+            # 验证必填字段
+            if not delivery.get('carrier_name'):
+                errors.append('承运人名称不能为空')
+            if not delivery.get('carrier_phone'):
+                errors.append('承运人联系方式不能为空')
+            if not delivery.get('carrier_type'):
+                errors.append('承运类型不能为空')
+            if not delivery.get('carrier_fee'):
+                errors.append('运费不能为空')
+            
+            # 验证承运类型
+            carrier_type = delivery.get('carrier_type')
+            if carrier_type not in [1, 2]:
+                errors.append(f'承运类型必须为1（司机直送）或2（承运商），当前值：{carrier_type}')
+            
+            # 收集订单信息和验证子订单号
+            orders_info = []
+            total_amount = 0
             for sub_order_number in delivery['sub_order_numbers']:
+                # 检查订单是否存在
                 order = Order.query.filter_by(sub_order_number=sub_order_number).first()
                 if not order:
-                    errors.append(f"子订单号 {sub_order_number} 不存在")
+                    errors.append(f'子订单号 {sub_order_number} 不存在')
                     continue
                 
-                # 更新订单的承运信息
-                order.carrier_type = delivery['carrier_type']
-                order.carrier_name = delivery['carrier_name']
-                order.carrier_phone = delivery.get('carrier_phone')
-                order.carrier_plate = delivery.get('carrier_plate')
-                order.carrier_fee = delivery.get('carrier_fee')
+                # 检查DeliveryImportRecord中是否有status=0的记录
+                existing_record = DeliveryImportRecord.query.filter_by(
+                    sub_order_number=sub_order_number,
+                    status=0
+                ).first()
+                if existing_record:
+                    batch_numbers_to_update.add(existing_record.batch_number)
                 
-                updated_orders.append(order)
+                # 收集订单金额信息
+                orders_info.append({
+                    'order': order,
+                    'amount': float(order.amount)
+                })
+                total_amount += float(order.amount)
+            
+            if orders_info:  # 只有在有有效订单时才保存处理结果
+                # 为每条送货信息生成独立的批次号
+                current_timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+                new_batch_number = f'DL{current_timestamp}'
+                
+                delivery_data[id(delivery)] = {
+                    'carrier_info': delivery,
+                    'orders_info': orders_info,
+                    'total_amount': total_amount,
+                    'batch_number': new_batch_number
+                }
 
         if errors:
-            db.session.rollback()
             return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
+
+        # 第二步：更新旧记录的状态
+        if batch_numbers_to_update:
+            DeliveryImportRecord.query.filter(
+                DeliveryImportRecord.batch_number.in_(batch_numbers_to_update),
+                DeliveryImportRecord.status == 0
+            ).update({
+                'status': DeliveryImportRecord.id
+            }, synchronize_session=False)
+
+        # 第三步：更新订单信息并创建新的导入记录
+        updated_orders = []
+        new_records = []
+        batch_numbers = []  # 记录所有新生成的批次号
         
-        if updated_orders:
-            db.session.commit()
-            return success_response({'updated_count': len(updated_orders)})
-        else:
-            return error_response(ErrorCode.BAD_REQUEST, '没有订单需要更新')
+        for delivery_info in delivery_data.values():
+            delivery = delivery_info['carrier_info']
+            total_amount = delivery_info['total_amount']
+            carrier_fee = float(delivery['carrier_fee'])
+            new_batch_number = delivery_info['batch_number']
+            batch_numbers.append(new_batch_number)
+
+            for order_info in delivery_info['orders_info']:
+                order = order_info['order']
+                order_amount = order_info['amount']
+                
+                # 计算该订单应分摊的运费
+                order_carrier_fee = round(order_amount / total_amount * carrier_fee, 2)
+                
+                # 更新订单信息
+                order.carrier_type = delivery['carrier_type']
+                order.carrier_name = delivery['carrier_name']
+                order.carrier_phone = delivery['carrier_phone']
+                order.carrier_plate = delivery.get('carrier_plate')
+                order.carrier_fee = order_carrier_fee
+                db.session.add(order)
+                updated_orders.append(order)
+
+                # 创建新的导入记录
+                new_record = DeliveryImportRecord(
+                    batch_number=new_batch_number,
+                    sub_order_number=order.sub_order_number,
+                    carrier_type=delivery['carrier_type'],
+                    carrier_name=delivery['carrier_name'],
+                    carrier_phone=delivery['carrier_phone'],
+                    carrier_plate=delivery.get('carrier_plate'),
+                    carrier_fee=order_carrier_fee,  # 使用计算后的运费
+                    status=0,
+                    create_time=datetime.now()
+                )
+                new_records.append(new_record)
+
+        # 保存所有更改
+        if new_records:
+            db.session.add_all(new_records)
+        db.session.commit()
+
+        return success_response({
+            'updated_count': len(updated_orders),
+            'batch_numbers': batch_numbers  # 返回所有新生成的批次号
+        })
             
     except Exception as e:
         db.session.rollback()
