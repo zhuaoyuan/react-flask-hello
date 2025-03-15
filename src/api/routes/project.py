@@ -4,7 +4,23 @@ from api.enum.error_code import ErrorCode
 from api.enum.provinces_and_cities import provinces_and_cities
 from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
-from sqlalchemy import or_
+from sqlalchemy import or_, text
+from functools import wraps
+
+def transactional(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            # 设置事务隔离级别为REPEATABLE READ
+            db.session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            db.session.begin_nested()
+            result = f(*args, **kwargs)
+            db.session.commit()
+            return result
+        except Exception as e:
+            db.session.rollback()
+            raise e
+    return decorated_function
 
 project = Blueprint('project', __name__)
 # 注册全局错误处理器
@@ -54,7 +70,7 @@ def get_projects():
     per_page = data.get('per_page', 10)
     search_query = data.get('search_query', '')
 
-    query = ProjectInfo.query
+    query = ProjectInfo.query.filter(ProjectInfo.is_deleted == 0)
     if search_query:
         query = query.filter(or_(
             ProjectInfo.project_name.like(f'%{search_query}%'),
@@ -85,6 +101,7 @@ def get_projects():
     })
 
 @project.route('/upload', methods=['POST'])
+@transactional
 def bulk_add_projects():
     """批量添加项目"""
     projects_data = request.get_json()
@@ -93,7 +110,11 @@ def bulk_add_projects():
 
     new_projects = []
     for project in projects_data.get('upload_list'):
-        existing_project = ProjectInfo.query.filter_by(project_name=project['project_name']).first()
+        existing_project = ProjectInfo.query.filter_by(
+            project_name=project['project_name'],
+            is_deleted=0
+        ).with_for_update().first()
+        
         if not existing_project:
             new_project = ProjectInfo(
                 project_name=project['project_name'],
@@ -107,7 +128,10 @@ def bulk_add_projects():
             suffix = 1
             while True:
                 new_project_name = f"{project['project_name']}_{suffix}"
-                if not ProjectInfo.query.filter_by(project_name=new_project_name).first():
+                if not ProjectInfo.query.filter_by(
+                    project_name=new_project_name,
+                    is_deleted=0
+                ).first():
                     new_project = ProjectInfo(
                         project_name=new_project_name,
                         customer_name=project['customer_name'],
@@ -121,17 +145,17 @@ def bulk_add_projects():
 
     if new_projects:
         db.session.add_all(new_projects)
-        db.session.commit()
         return success_response()
     else:
         return error_response(ErrorCode.PROJECTS_ALL_EXISTED)
 
 @project.route('/edit', methods=['POST'])
+@transactional
 def edit_project():
     """编辑项目信息"""
     data = request.json
     id = data.get('id')
-    project = ProjectInfo.query.get(id)
+    project = ProjectInfo.query.filter_by(id=id, is_deleted=0).with_for_update().first()
     if not project:
         return error_response(ErrorCode.PROJECT_NOT_FOUND)
 
@@ -141,31 +165,41 @@ def edit_project():
     project.end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
     project.project_description = data.get('project_description', project.project_description)
 
-    try:
-        db.session.commit()
-        return success_response(project.to_dict())
-    except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR)
+    return success_response(project.to_dict())
 
 @project.route('/delete', methods=['POST'])
+@transactional
 def delete_project():
     """删除项目"""
     data = request.json
     id = data.get('id')
-    project = ProjectInfo.query.get(id)
+    project = ProjectInfo.query.filter_by(id=id, is_deleted=0).with_for_update().first()
     if not project:
         return error_response(ErrorCode.PROJECT_NOT_FOUND)
 
     try:
-        db.session.delete(project)
-        db.session.commit()
+        print(f"[事务开始] 删除项目，ID：{id}，项目名称：{project.project_name}")
+        
+        # 逻辑删除项目
+        project.is_deleted = project.id
+        db.session.add(project)
+        
+        # 逻辑删除关联的价格配置
+        ProjectPriceConfig.query.filter_by(
+            project_id=project.id,
+            is_deleted=0
+        ).update({
+            'is_deleted': ProjectPriceConfig.id
+        }, synchronize_session=False)
+        
+        print("[事务完成] 项目删除成功")
         return success_response()
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR)
+        print(f"[事务回滚] 项目删除失败：{str(e)}")
+        raise
 
 @project.route('/create', methods=['POST'])
+@transactional
 def create_project():
     """创建新项目及其价格配置"""
     try:
@@ -176,7 +210,7 @@ def create_project():
             if field not in data:
                 return error_response(ErrorCode.BAD_REQUEST, f"缺少必要字段: {field}")
 
-        if ProjectInfo.query.filter_by(project_name=data['project_name']).first():
+        if ProjectInfo.query.filter_by(project_name=data['project_name'], is_deleted=0).first():
             return error_response(ErrorCode.BAD_REQUEST, "项目名称已存在")
 
         start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
@@ -215,16 +249,14 @@ def create_project():
             price_configs.append(price_config)
 
         db.session.add_all(price_configs)
-        db.session.commit()
-
         return success_response({
             'id': new_project.id,
             'project_name': new_project.project_name
         })
 
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+        print(f"[事务回滚] 创建项目失败：{str(e)}")
+        raise
 
 @project.route('/price_config/list', methods=['POST'])
 def query_project_price_config():
@@ -235,6 +267,9 @@ def query_project_price_config():
         query = ProjectPriceConfig.query.join(
             ProjectInfo,
             ProjectPriceConfig.project_id == ProjectInfo.id
+        ).filter(
+            ProjectInfo.is_deleted == 0,
+            ProjectPriceConfig.is_deleted == 0
         )
         
         if 'project_name' in data and data['project_name']:
@@ -272,6 +307,7 @@ def query_project_price_config():
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @project.route('/price_config/upload', methods=['POST'])
+@transactional
 def upload_project_price_config():
     """批量上传项目价格配置"""
     price_data = request.get_json()
@@ -284,8 +320,9 @@ def upload_project_price_config():
     for index, price in enumerate(price_data.get('upload_list')):
         project = ProjectInfo.query.filter_by(
             id=price['project_id'],
-            project_name=price['project_name']
-        ).first()
+            project_name=price['project_name'],
+            is_deleted=0
+        ).with_for_update().first()
         
         sheet_index = index + 2
 
@@ -334,10 +371,9 @@ def upload_project_price_config():
             return error_response(ErrorCode.BAD_REQUEST, error_message)
         if new_prices:
             db.session.add_all(new_prices)
-            db.session.commit()
             return success_response()
         else:
             return error_response(ErrorCode.BAD_REQUEST)
     except Exception as e:
-        db.session.rollback()
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR) 
+        print(f"[事务回滚] 上传价格配置失败：{str(e)}")
+        raise 

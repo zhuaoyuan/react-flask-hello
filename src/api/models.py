@@ -44,6 +44,7 @@ class ProjectInfo(db.Model):
     start_date = db.Column(db.Date, nullable=False, comment='合作起始日期')
     end_date = db.Column(db.Date, nullable=False, comment='合作结束日期')
     project_description = db.Column(db.String(1000), nullable=True, default=None, comment='项目介绍')
+    is_deleted = db.Column(db.BigInteger, nullable=False, default=0, comment='删除标记，0-未删除，>0-已删除(记录ID)')
 
     def __repr__(self):
         """返回项目信息的字符串表示"""
@@ -81,6 +82,7 @@ class ProjectPriceConfig(db.Model):
     unit_price = db.Column(db.Integer, nullable=False, comment='单价')
     project_id = db.Column(db.BigInteger, nullable=False, comment='项目ID')
     project_name = db.Column(db.String(255), nullable=False, comment='项目名称')
+    is_deleted = db.Column(db.BigInteger, nullable=False, default=0, comment='删除标记，0-未删除，>0-已删除(记录ID)')
 
     # 添加联合唯一约束
     __table_args__ = (
@@ -117,6 +119,7 @@ class Order(db.Model):
     destination_address = db.Column(db.String(500), nullable=True, comment='送达详细地址')
     remark = db.Column(db.String(500), nullable=True, comment='备注')
     amount = db.Column(db.Numeric(10, 2), nullable=False, comment='金额')
+    is_deleted = db.Column(db.BigInteger, nullable=False, default=0, comment='删除标记，0-未删除，>0-已删除(记录ID)')
     
     # 新增承运人相关字段
     carrier_type = db.Column(db.Integer, nullable=True, comment='承运类型：1-司机直送，2-承运商')

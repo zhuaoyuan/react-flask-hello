@@ -32,7 +32,7 @@ def get_orders():
     page = data.get('page', 1)
     per_page = data.get('per_page', 10)
     
-    query = Order.query
+    query = Order.query.filter(Order.is_deleted == 0)
     
     if 'project_name' in data and data['project_name']:
         query = query.filter(Order.project_name == data['project_name'])
@@ -96,7 +96,7 @@ def export_orders():
     """导出订单列表"""
     data = request.get_json()
     
-    query = Order.query
+    query = Order.query.filter(Order.is_deleted == 0)
     
     if 'project_name' in data and data['project_name']:
         query = query.filter(Order.project_name == data['project_name'])
@@ -154,13 +154,13 @@ def import_orders():
     
     try:
         print(f"[事务开始] 导入订单，数据量：{len(data['orders'])}")
-        project = ProjectInfo.query.get(data['project_id'])
+        project = ProjectInfo.query.filter_by(id=data['project_id'], is_deleted=0).first()
         if not project:
             return error_response(ErrorCode.BAD_REQUEST, '项目不存在')
         if project.project_name != data['project_name']:
             return error_response(ErrorCode.BAD_REQUEST, '项目ID与项目名称不匹配')
 
-        price_configs = ProjectPriceConfig.query.filter_by(project_id=project.id).all()
+        price_configs = ProjectPriceConfig.query.filter_by(project_id=project.id, is_deleted=0).all()
         if not price_configs:
             return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
 
@@ -244,7 +244,7 @@ def delete_order():
     """删除订单"""
     data = request.json
     id = data.get('id')
-    order = Order.query.get(id)
+    order = Order.query.filter_by(id=id, is_deleted=0).with_for_update().first()
     if not order:
         return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
 
@@ -276,14 +276,15 @@ def delete_order():
                 batch_number=existing_record.batch_number,
                 status=0
             ).update({
-                'status': existing_record.id  # 使用记录ID而不是类属性
+                'status': existing_record.id
             }, synchronize_session=False)
             
             # 重置其他子订单的送货信息
             if sub_order_numbers_to_reset:
                 print(f"[事务处理] 重置{len(sub_order_numbers_to_reset)}个关联订单的送货信息")
                 Order.query.filter(
-                    Order.sub_order_number.in_(sub_order_numbers_to_reset)
+                    Order.sub_order_number.in_(sub_order_numbers_to_reset),
+                    Order.is_deleted == 0
                 ).update({
                     'carrier_type': None,
                     'carrier_name': None,
@@ -292,8 +293,9 @@ def delete_order():
                     'carrier_fee': None
                 }, synchronize_session=False)
 
-        # 删除订单
-        db.session.delete(order)
+        # 逻辑删除订单
+        order.is_deleted = order.id
+        db.session.add(order)
         print("[事务完成] 订单删除成功")
         return success_response()
     except Exception as e:
@@ -310,11 +312,11 @@ def edit_order():
 
     try:
         # 使用行锁查询订单
-        order = Order.query.with_for_update().get(data['id'])
+        order = Order.query.filter_by(id=data['id'], is_deleted=0).with_for_update().first()
         if not order:
             return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
 
-        price_configs = ProjectPriceConfig.query.filter_by(project_id=order.project_id).all()
+        price_configs = ProjectPriceConfig.query.filter_by(project_id=order.project_id, is_deleted=0).all()
         if not price_configs:
             return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
 
@@ -407,7 +409,7 @@ def import_delivery():
             total_amount = 0
             for sub_order_number in delivery['sub_order_numbers']:
                 # 检查订单是否存在，并添加行锁
-                order = Order.query.filter_by(sub_order_number=sub_order_number).with_for_update().first()
+                order = Order.query.filter_by(sub_order_number=sub_order_number, is_deleted=0).with_for_update().first()
                 if not order:
                     errors.append(f'子订单号 {sub_order_number} 不存在')
                     continue
@@ -465,7 +467,8 @@ def import_delivery():
             if sub_order_numbers_to_reset:
                 print(f"[事务处理] 重置{len(sub_order_numbers_to_reset)}个订单的送货信息")
                 Order.query.filter(
-                    Order.sub_order_number.in_(sub_order_numbers_to_reset)
+                    Order.sub_order_number.in_(sub_order_numbers_to_reset),
+                    Order.is_deleted == 0
                 ).update({
                     'carrier_type': None,
                     'carrier_name': None,
