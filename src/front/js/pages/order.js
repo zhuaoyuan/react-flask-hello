@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader, Modal, Popconfirm } from 'antd';
-import { SearchOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader, Modal, Popconfirm, Checkbox } from 'antd';
+import { SearchOutlined, DownloadOutlined, UploadOutlined, SettingOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
@@ -168,17 +168,13 @@ export const Order = () => {
                 const wb = XLSX.utils.book_new();
                 const exportData = orders.map(order => ({
                     '订单号': order.order_number,
+                    '子订单号': order.sub_order_number,
                     '下单日期': order.order_date,
                     '产品名称': order.product_name,
                     '数量': order.quantity,
                     '重量(吨)': order.weight,
                     '出发地': `${order.departure_province}${order.departure_city}`,
                     '送达地': `${order.destination_province}${order.destination_city}${order.destination_address || ''}`,
-                    '承运类型': order.carrier_type === 1 ? '司机直送' : '承运商',
-                    '承运人名称': order.carrier_name || '',
-                    '承运人车牌': order.carrier_plate || '',
-                    '承运人电话': order.carrier_phone || '',
-                    '运费': order.carrier_fee || '',
                     '备注': order.remark || ''
                 }));
                 const ws = XLSX.utils.json_to_sheet(exportData);
@@ -191,8 +187,43 @@ export const Order = () => {
         }
     };
 
-    // 下载模板
-    const handleDownloadTemplate = () => {
+    // 下载送货模板
+    const handleDownloadDeliveryTemplate = () => {
+        // 创建模板数据
+        const templateData = [
+            {
+                '子订单号': 'JD202401010001-1,JD202401010002-1',
+                '承运人名称': '张三',
+                '承运人联系方式': '13800138000',
+                '承运人车牌': '粤B12345',
+                '承运类型': '1',  // 1-司机直送，2-承运商
+                '运费': '2000'
+            }
+        ];
+
+        // 创建工作簿
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(templateData);
+
+        // 设置列宽
+        ws['!cols'] = [
+            { wch: 50 },  // 子订单号
+            { wch: 15 },  // 承运人名称
+            { wch: 15 },  // 承运人联系方式
+            { wch: 12 },  // 承运人车牌
+            { wch: 10 },  // 承运类型
+            { wch: 10 }   // 运费
+        ];
+
+        // 添加工作表到工作簿
+        XLSX.utils.book_append_sheet(wb, ws, '送货信息导入模板');
+        
+        // 下载文件
+        XLSX.writeFile(wb, '送货信息导入模板.xlsx');
+    };
+
+    // 下载订单模板
+    const handleDownloadOrderTemplate = () => {
         // 创建模板数据
         const templateData = [
             {
@@ -239,7 +270,7 @@ export const Order = () => {
     };
 
     // 导入订单
-    const handleImport = (file) => {
+    const handleImportOrder = (file) => {
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
@@ -267,43 +298,104 @@ export const Order = () => {
                     if (!row['送达市']) errors.push(`第${rowNum}行：送达市不能为空`);
                     if (!row['送达详细地址']) errors.push(`第${rowNum}行：送达详细地址不能为空`);
 
-                    // 验证省市是否存在
-                    const departureProvince = row['出发省'];
-                    const departureCity = row['出发市'];
-                    const destinationProvince = row['送达省'];
-                    const destinationCity = row['送达市'];
-
-                    if (!provinces_and_cities[departureProvince]) {
-                        errors.push(`第${rowNum}行：出发省份 "${departureProvince}" 不存在`);
-                    } else if (!provinces_and_cities[departureProvince].includes(departureCity)) {
-                        errors.push(`第${rowNum}行：出发城市 "${departureCity}" 不属于 ${departureProvince}`);
-                    }
-
-                    if (!provinces_and_cities[destinationProvince]) {
-                        errors.push(`第${rowNum}行：送达省份 "${destinationProvince}" 不存在`);
-                    } else if (!provinces_and_cities[destinationProvince].includes(destinationCity)) {
-                        errors.push(`第${rowNum}行：送达城市 "${destinationCity}" 不属于 ${destinationProvince}`);
-                    }
-
-                    // 验证数字格式
-                    const quantity = parseInt(row['数量'], 10);
-                    const weight = parseFloat(row['重量(吨)']);
-                    if (isNaN(quantity) || quantity <= 0) errors.push(`第${rowNum}行：数量必须为大于0的整数`);
-                    if (isNaN(weight) || weight <= 0) errors.push(`第${rowNum}行：重量必须为大于0的数字`);
-
                     return {
                         order_number: row['订单号'],
                         order_date: row['下单日期'],
                         delivery_date: row['送货日期'],
                         product_name: row['产品名称'],
-                        quantity: quantity,
-                        weight: weight,
-                        departure_province: departureProvince,
-                        departure_city: departureCity,
-                        destination_province: destinationProvince,
-                        destination_city: destinationCity,
+                        quantity: parseInt(row['数量']),
+                        weight: parseFloat(row['重量(吨)']),
+                        departure_province: row['出发省'],
+                        departure_city: row['出发市'],
+                        destination_province: row['送达省'],
+                        destination_city: row['送达市'],
                         destination_address: row['送达详细地址'],
-                        remark: row['备注'] || ''
+                        remark: row['备注']
+                    };
+                });
+
+                // 如果有错误，显示错误信息并终止导入
+                if (errors.length > 0) {
+                    Modal.error({
+                        title: '数据验证失败',
+                        content: (
+                            <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+                                {errors.map((err, index) => (
+                                    <p key={index}>{err}</p>
+                                ))}
+                            </div>
+                        ),
+                    });
+                    return;
+                }
+
+                // 提交数据到后端
+                const selectedProject = projects.find(p => p.project_name === form.getFieldValue('project_name'));
+                if (!selectedProject) {
+                    message.error('请先选择项目');
+                    return;
+                }
+
+                const response = await axios.post(`${backendUrl}/api/order/import`, {
+                    orders: orders,
+                    project_id: selectedProject.value,
+                    project_name: selectedProject.project_name
+                });
+
+                if (response.data.success) {
+                    message.success('导入成功');
+                    fetchOrders();
+                } else {
+                    message.error(response.data.error_message || '导入失败');
+                }
+            } catch (error) {
+                console.error('导入错误:', error);
+                message.error('导入失败：' + (error.response?.data?.error_message || error.message || '未知错误'));
+            }
+        };
+        reader.readAsBinaryString(file);
+        return false;
+    };
+
+    // 导入送货信息
+    const handleImportDelivery = (file) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = e.target.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                // 数据验证
+                const errors = [];
+                const deliveries = jsonData.map((row, index) => {
+                    const rowNum = index + 2; // Excel行号从2开始（1是表头）
+
+                    // 检查必填字段
+                    if (!row['子订单号']) errors.push(`第${rowNum}行：子订单号不能为空`);
+                    if (!row['承运人名称']) errors.push(`第${rowNum}行：承运人名称不能为空`);
+                    if (!row['承运类型']) errors.push(`第${rowNum}行：承运类型不能为空`);
+
+                    // 验证承运类型
+                    const carrierType = parseInt(row['承运类型']);
+                    if (![1, 2].includes(carrierType)) {
+                        errors.push(`第${rowNum}行：承运类型必须为1（司机直送）或2（承运商）`);
+                    }
+
+                    // 验证运费格式
+                    if (row['运费'] && isNaN(parseFloat(row['运费']))) {
+                        errors.push(`第${rowNum}行：运费必须为数字`);
+                    }
+
+                    return {
+                        sub_order_numbers: row['子订单号'].split(',').map(n => n.trim()),
+                        carrier_name: row['承运人名称'],
+                        carrier_phone: row['承运人联系方式'],
+                        carrier_plate: row['承运人车牌'],
+                        carrier_type: carrierType,
+                        carrier_fee: row['运费'] ? parseFloat(row['运费']) : null
                     };
                 });
 
@@ -320,24 +412,9 @@ export const Order = () => {
                     return;
                 }
 
-                // 验证项目是否存在
-                const projectName = form.getFieldValue('project_name');
-                if (!projectName) {
-                    message.error('请先选择项目');
-                    return;
-                }
-
-                const project = projects.find(p => p.project_name === projectName);
-                if (!project) {
-                    message.error('所选项目不存在');
-                    return;
-                }
-
                 // 提交数据到后端
-                const response = await axios.post(`${backendUrl}/api/order/import`, {
-                    project_id: project.value,
-                    project_name: projectName,
-                    orders: orders
+                const response = await axios.post(`${backendUrl}/api/order/import_delivery`, {
+                    deliveries: deliveries
                 });
 
                 if (response.data.success) {
@@ -424,24 +501,27 @@ export const Order = () => {
     };
 
     // 表格列定义
-    const columns = [
+    const allColumns = [
         {
+            key: 'order_number',
             title: '订单号',
             dataIndex: 'order_number',
             width: 160,
         },
         {
+            key: 'sub_order_number',
+            title: '子订单号',
+            dataIndex: 'sub_order_number',
+            width: 160,
+        },
+        {
+            key: 'order_date',
             title: '下单日期',
             dataIndex: 'order_date',
             width: 120,
         },
         {
-            title: '客户报价',
-            dataIndex: 'amount',
-            width: 140,
-            render: (text) => `¥${text.toFixed(2)}`
-        },
-        {
+            key: 'cargo_info',
             title: '货物信息',
             dataIndex: 'cargo_info',
             width: 240,
@@ -454,52 +534,67 @@ export const Order = () => {
             )
         },
         {
+            key: 'departure',
             title: '出发地',
             dataIndex: 'departure',
             width: 180,
         },
         {
+            key: 'destination',
             title: '送达地址',
             dataIndex: 'destination',
             width: 300,
         },
         {
-            title: '承运人',
-            dataIndex: 'carrier',
-            width: 200,
-            render: (_, record) => (
-                <div style={{ whiteSpace: 'pre-line' }}>
-                    {[
-                        record.carrier_name,
-                        record.carrier_plate,
-                        record.carrier_phone
-                    ].filter(Boolean).join('\n') || '-'}
-                </div>
-            )
-        },
-        {
-            title: '运费',
-            dataIndex: 'carrier_fee',
+            key: 'amount',
+            title: '客户报价',
+            dataIndex: 'amount',
             width: 120,
-            render: (text) => text ? `¥${Number(text).toFixed(2)}` : '-'
+            render: (text) => `¥${text.toFixed(2)}`
         },
         {
+            key: 'carrier_type',
             title: '承运类型',
             dataIndex: 'carrier_type',
-            width: 120,
+            width: 100,
             render: (text) => {
                 if (text === null || text === undefined) return '-';
                 return text === 1 ? '司机直送' : '承运商';
             }
         },
         {
+            key: 'carrier_info',
+            title: '承运人信息',
+            dataIndex: 'carrier_info',
+            width: 200,
+            render: (_, record) => {
+                const info = [];
+                if (record.carrier_name) info.push(`姓名：${record.carrier_name}`);
+                if (record.carrier_phone) info.push(`电话：${record.carrier_phone}`);
+                if (record.carrier_plate) info.push(`车牌：${record.carrier_plate}`);
+                return info.length > 0 ? (
+                    <div style={{ whiteSpace: 'pre-line' }}>
+                        {info.join('\n')}
+                    </div>
+                ) : '-';
+            }
+        },
+        {
+            key: 'carrier_fee',
+            title: '运费',
+            dataIndex: 'carrier_fee',
+            width: 120,
+            render: (text) => text ? `¥${Number(text).toFixed(2)}` : '-'
+        },
+        {
+            key: 'remark',
             title: '备注',
             dataIndex: 'remark',
             width: 200,
         },
         {
-            title: '操作',
             key: 'action',
+            title: '操作',
             width: 120,
             fixed: 'right',
             render: (_, record) => (
@@ -516,6 +611,32 @@ export const Order = () => {
                 </Space>
             ),
         },
+    ];
+
+    // 列设置状态
+    const [columnSettings, setColumnSettings] = useState(() => {
+        const savedSettings = localStorage.getItem('orderColumnSettings');
+        return savedSettings ? JSON.parse(savedSettings) : allColumns.reduce((acc, col) => {
+            acc[col.key] = true;
+            return acc;
+        }, {});
+    });
+    const [settingsVisible, setSettingsVisible] = useState(false);
+
+    // 处理列设置变更
+    const handleColumnSettingChange = (checkedValues) => {
+        const newSettings = {};
+        allColumns.forEach(col => {
+            newSettings[col.key] = checkedValues.includes(col.key);
+        });
+        setColumnSettings(newSettings);
+        localStorage.setItem('orderColumnSettings', JSON.stringify(newSettings));
+    };
+
+    // 获取当前显示的列
+    const columns = [
+        ...allColumns.filter(col => col.key !== 'action' && columnSettings[col.key]),
+        allColumns.find(col => col.key === 'action') // 操作列始终显示
     ];
 
     return (
@@ -541,12 +662,22 @@ export const Order = () => {
                         />
                     </Form.Item>
                     <Space>
-                        <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
-                            下载模板
+                        <Button icon={<DownloadOutlined />} onClick={handleDownloadOrderTemplate}>
+                            下载订单模板
+                        </Button>
+                        <Button icon={<DownloadOutlined />} onClick={handleDownloadDeliveryTemplate}>
+                            下载送货模板
                         </Button>
                         <Upload
                             accept=".xlsx,.xls"
-                            beforeUpload={handleImport}
+                            beforeUpload={handleImportDelivery}
+                            showUploadList={false}
+                        >
+                            <Button type="primary" icon={<UploadOutlined />}>导入送货信息</Button>
+                        </Upload>
+                        <Upload
+                            accept=".xlsx,.xls"
+                            beforeUpload={handleImportOrder}
                             showUploadList={false}
                         >
                             <Button type="primary" icon={<UploadOutlined />}>导入订单</Button>
@@ -558,9 +689,17 @@ export const Order = () => {
             <Card>
                 <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '14px' }}>订单列表</div>
-                    <Button type="primary" onClick={handleExport}>
-                        导出订单
-                    </Button>
+                    <Space>
+                        <Button
+                            icon={<SettingOutlined />}
+                            onClick={() => setSettingsVisible(true)}
+                        >
+                            列设置
+                        </Button>
+                        <Button type="primary" onClick={handleExport}>
+                            导出订单
+                        </Button>
+                    </Space>
                 </div>
 
                 <Form form={form} layout="inline" style={{ marginBottom: '16px' }}>
@@ -712,6 +851,31 @@ export const Order = () => {
                         <Input.TextArea />
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            {/* 列设置弹窗 */}
+            <Modal
+                title="列设置"
+                open={settingsVisible}
+                onOk={() => setSettingsVisible(false)}
+                onCancel={() => setSettingsVisible(false)}
+                width={400}
+            >
+                <Checkbox.Group
+                    value={Object.entries(columnSettings)
+                        .filter(([key, value]) => value && key !== 'action')
+                        .map(([key]) => key)}
+                    onChange={handleColumnSettingChange}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                >
+                    {allColumns
+                        .filter(col => col.key !== 'action')
+                        .map(col => (
+                            <Checkbox key={col.key} value={col.key}>
+                                {col.title}
+                            </Checkbox>
+                        ))}
+                </Checkbox.Group>
             </Modal>
         </div>
     );

@@ -47,6 +47,7 @@ def get_orders():
         'project_id': order.project_id,
         'project_name': order.project_name,
         'order_number': order.order_number,
+        'sub_order_number': order.sub_order_number,
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'product_name': order.product_name,
@@ -58,7 +59,12 @@ def get_orders():
         'destination_city': order.destination_city,
         'destination_address': order.destination_address,
         'remark': order.remark,
-        'amount': float(order.amount)
+        'amount': float(order.amount),
+        'carrier_type': order.carrier_type,
+        'carrier_name': order.carrier_name,
+        'carrier_phone': order.carrier_phone,
+        'carrier_plate': order.carrier_plate,
+        'carrier_fee': float(order.carrier_fee) if order.carrier_fee else None
     } for order in pagination.items]
     
     return success_response({
@@ -102,6 +108,7 @@ def export_orders():
     
     orders_data = [{
         'order_number': order.order_number,
+        'sub_order_number': order.sub_order_number,
         'order_date': order.order_date.strftime('%Y-%m-%d'),
         'delivery_date': order.delivery_date.strftime('%Y-%m-%d'),
         'product_name': order.product_name,
@@ -155,10 +162,19 @@ def import_orders():
             unit_price = price_config_dict[route_key]
             amount = float(order_data['weight']) * unit_price
 
+            # 生成子订单号
+            sub_order_number = f"{order_data['order_number']}-1"
+            # 检查子订单号是否已存在，如果存在则递增序号
+            seq = 1
+            while Order.query.filter_by(sub_order_number=sub_order_number).first():
+                seq += 1
+                sub_order_number = f"{order_data['order_number']}-{seq}"
+
             new_order = Order(
                 project_id=project.id,
                 project_name=project.project_name,
                 order_number=order_data['order_number'],
+                sub_order_number=sub_order_number,
                 order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
                 delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
                 product_name=order_data['product_name'],
@@ -252,6 +268,48 @@ def edit_order():
 
         db.session.commit()
         return success_response()
+    except Exception as e:
+        db.session.rollback()
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
+@order.route('/import_delivery', methods=['POST'])
+def import_delivery():
+    """导入送货信息"""
+    data = request.get_json()
+    if not data or 'deliveries' not in data:
+        return error_response(ErrorCode.BAD_REQUEST, '无效的请求数据')
+    
+    try:
+        errors = []
+        updated_orders = []
+        
+        for delivery in data['deliveries']:
+            # 根据子订单号查找订单
+            for sub_order_number in delivery['sub_order_numbers']:
+                order = Order.query.filter_by(sub_order_number=sub_order_number).first()
+                if not order:
+                    errors.append(f"子订单号 {sub_order_number} 不存在")
+                    continue
+                
+                # 更新订单的承运信息
+                order.carrier_type = delivery['carrier_type']
+                order.carrier_name = delivery['carrier_name']
+                order.carrier_phone = delivery.get('carrier_phone')
+                order.carrier_plate = delivery.get('carrier_plate')
+                order.carrier_fee = delivery.get('carrier_fee')
+                
+                updated_orders.append(order)
+
+        if errors:
+            db.session.rollback()
+            return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
+        
+        if updated_orders:
+            db.session.commit()
+            return success_response({'updated_count': len(updated_orders)})
+        else:
+            return error_response(ErrorCode.BAD_REQUEST, '没有订单需要更新')
+            
     except Exception as e:
         db.session.rollback()
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e)) 

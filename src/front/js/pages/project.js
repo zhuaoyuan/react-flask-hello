@@ -97,8 +97,41 @@ export const Project = () => {
 	};
 
 	useEffect(() => {
-		fetchData(pagination);
-	}, []);
+		let isSubscribed = true;
+
+		const fetchDataSafely = async () => {
+			setLoading(true);
+			try {
+				const response = await axios.post(`${backendUrl}/api/project/list`, {
+					search_query: searchQuery,
+					page: pagination.current || 1,
+					per_page: pagination.pageSize || 9,
+				});
+				if (isSubscribed) {
+					setData(response.data.data);
+					setPagination(prev => ({
+						...prev,
+						total: response.data.total,
+					}));
+				}
+			} catch (error) {
+				if (isSubscribed) {
+					console.log(error);
+					message.error('获取数据失败');
+				}
+			} finally {
+				if (isSubscribed) {
+					setLoading(false);
+				}
+			}
+		};
+
+		fetchDataSafely();
+
+		return () => {
+			isSubscribed = false;
+		};
+	}, [searchQuery, pagination.current, pagination.pageSize]);
 
 	const handlePageChange = (page, pageSize) => {
 		setPagination({

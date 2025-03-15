@@ -104,6 +104,7 @@ class Order(db.Model):
     project_id = db.Column(db.BigInteger, nullable=False, comment='项目ID')
     project_name = db.Column(db.String(255), nullable=False, comment='项目名称')
     order_number = db.Column(db.String(50), nullable=False, unique=True, comment='订单号')
+    sub_order_number = db.Column(db.String(60), nullable=False, unique=True, comment='子订单号')
     order_date = db.Column(db.Date, nullable=False, comment='下单日期')
     delivery_date = db.Column(db.Date, nullable=False, comment='发货日期')
     product_name = db.Column(db.String(255), nullable=False, comment='产品名称')
@@ -133,6 +134,7 @@ class Order(db.Model):
             'project_id': self.project_id,
             'project_name': self.project_name,
             'order_number': self.order_number,
+            'sub_order_number': self.sub_order_number,
             'order_date': self.order_date.isoformat() if self.order_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
             'product_name': self.product_name,
@@ -145,10 +147,37 @@ class Order(db.Model):
             'destination_address': self.destination_address,
             'remark': self.remark,
             'amount': float(self.amount) if self.amount else 0,
-            # 新增字段的序列化
             'carrier_type': self.carrier_type,
             'carrier_name': self.carrier_name,
             'carrier_plate': self.carrier_plate,
             'carrier_phone': self.carrier_phone,
             'carrier_fee': float(self.carrier_fee) if self.carrier_fee else 0
+        }
+    
+class DeliveryImportRecord(db.Model):
+    """
+    送货单导入记录模型
+    用于记录送货单导入的批次信息和状态
+    """
+    __tablename__ = 'delivery_import_record'
+    
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True, comment='自增ID')
+    order_id = db.Column(db.BigInteger, db.ForeignKey('order.id'), nullable=False, comment='订单ID')
+    batch_number = db.Column(db.String(50), nullable=False, comment='导入批次号')
+    status = db.Column(db.Integer, nullable=False, default=0, comment='状态：0-待处理，1-处理成功，2-处理失败')
+
+    def __repr__(self):
+        """返回导入记录的字符串表示"""
+        return f'<DeliveryImportRecord {self.batch_number}>'
+
+    def to_dict(self):
+        """
+        将导入记录转换为字典格式
+        :return: 导入记录字典
+        """
+        return {
+            'id': self.id,
+            'order_id': self.order_id,
+            'batch_number': self.batch_number,
+            'status': self.status
         }
