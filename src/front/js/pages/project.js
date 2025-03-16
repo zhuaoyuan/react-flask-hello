@@ -606,23 +606,56 @@ export const Project = () => {
 
 	// 获取承运人列表
 	const fetchCarrierList = async (abortSignal) => {
+		if (!currentProject?.project_name) {
+			console.warn('没有选择项目，无法获取承运人列表');
+			setCarrierOptions([]);
+			return;
+		}
+
 		try {
+			console.log('开始获取承运人列表:', currentProject.project_name);
+			
 			const response = await axios.post(`${backendUrl}/api/project/carrier/list`, {
-				project_name: currentProject?.project_name
+				project_name: currentProject.project_name
 			}, {
 				signal: abortSignal
 			});
+
+			console.log('承运人列表响应:', response.data);
+
 			if (response.data.success && Array.isArray(response.data.result)) {
-				setCarrierOptions(response.data.result.map(carrier => ({
-					label: carrier || '-',
-					value: carrier
-				})));
+				// 过滤掉空值并去重
+				const carriers = [...new Set(response.data.result.filter(carrier => 
+					carrier != null && carrier.trim() !== ''
+				))];
+				
+				console.log('处理后的承运人列表:', carriers);
+				
+				if (carriers.length > 0) {
+					setCarrierOptions(carriers.map(carrier => ({
+						label: carrier,
+						value: carrier
+					})));
+				} else {
+					console.warn('未找到任何承运人');
+					setCarrierOptions([]);
+				}
+				
+				// 更新表单中的承运人选项，移除不存在的选项
+				const currentCarriers = profitFilterForm.getFieldValue('carriers');
+				if (currentCarriers?.length > 0) {
+					profitFilterForm.setFieldsValue({
+						carriers: currentCarriers.filter(carrier => carriers.includes(carrier))
+					});
+				}
 			} else {
+				console.warn('无效的承运人列表响应:', response.data);
 				setCarrierOptions([]);
 			}
 		} catch (error) {
 			if (error.name !== 'AbortError') {
 				console.error('获取承运人列表失败:', error);
+				message.error('获取承运人列表失败');
 				setCarrierOptions([]);
 			}
 		}
@@ -750,14 +783,18 @@ export const Project = () => {
 	const handleViewPrice = async (project) => {
 		const abortController = new AbortController();
 		let isSubscribed = true;
-		setCurrentProject(project);
-		setIsPriceModalOpen(true);
 		
 		try {
+			setCurrentProject(project);
+			setIsPriceModalOpen(true);
+			
+			// 先获取承运人列表
+			await fetchCarrierList(abortController.signal);
+			
+			// 然后获取价格列表和利润列表
 			await Promise.all([
 				fetchPriceList(project, { current: 1, pageSize: 10 }, abortController.signal),
-				fetchProfitList(project, { current: 1, pageSize: 10 }, abortController.signal),
-				fetchCarrierList(abortController.signal)
+				fetchProfitList(project, { current: 1, pageSize: 10 }, abortController.signal)
 			]);
 		} catch (error) {
 			if (error.name !== 'AbortError' && isSubscribed) {
@@ -1170,7 +1207,13 @@ export const Project = () => {
 				width={1000}
 				footer={null}
 			>
-				<Tabs defaultActiveKey="1">
+				<Tabs defaultActiveKey="1" onChange={(activeKey) => {
+					if (activeKey === "2") {
+						// 当切换到利润表标签时，重新获取承运人列表
+						const abortController = new AbortController();
+						fetchCarrierList(abortController.signal);
+					}
+				}}>
 					<Tabs.TabPane tab="报价表" key="1">
 						<Form
 							form={priceFilterForm}

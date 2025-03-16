@@ -471,6 +471,8 @@ def get_carrier_list():
     data = request.get_json()
     
     try:
+        print(f"获取承运人列表，项目名称: {data.get('project_name')}")
+        
         # 获取项目信息
         project = ProjectInfo.query.filter_by(
             project_name=data['project_name'],
@@ -478,18 +480,25 @@ def get_carrier_list():
         ).first()
         
         if not project:
+            print(f"项目未找到: {data.get('project_name')}")
             return error_response(ErrorCode.PROJECT_NOT_FOUND)
+
+        print(f"找到项目，ID: {project.id}")
 
         # 查询该项目下的所有不同承运人
         carriers = db.session.query(
             Order.carrier_name
         ).filter(
             Order.project_id == project.id,
-            Order.is_deleted == 0
+            Order.is_deleted == 0,
+            Order.carrier_name.isnot(None),  # 排除 null 值
+            Order.carrier_name != ''  # 排除空字符串
         ).distinct().all()
         
         # 转换为列表，过滤掉 None 值
-        carrier_list = [carrier[0] for carrier in carriers if carrier[0] is not None]
+        carrier_list = [carrier[0] for carrier in carriers if carrier[0] is not None and carrier[0].strip() != '']
+        
+        print(f"找到承运人列表: {carrier_list}")
         
         return success_response(carrier_list)
 
