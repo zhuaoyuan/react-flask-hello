@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, Cascader, InputNumber, Select } from 'antd';
+import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, Cascader, InputNumber, Select, Checkbox } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
@@ -79,6 +79,10 @@ export const Project = () => {
 	const [profitPagination, setProfitPagination] = useState({ current: 1, pageSize: 10, total: 0 });
 	const [priceFilterForm] = Form.useForm();
 	const [priceFilters, setPriceFilters] = useState({});
+	const [profitFilterForm] = Form.useForm();
+	const [profitFilters, setProfitFilters] = useState({});
+	const [groupByFields, setGroupByFields] = useState(['province', 'city', 'carrier']);
+	const [carrierOptions, setCarrierOptions] = useState([]);
 
 	const fetchData = async (params = {}) => {
 		setLoading(true);
@@ -477,6 +481,10 @@ export const Project = () => {
 				project_name: project.project_name,
 				page: params.current || 1,
 				per_page: params.pageSize || 10,
+				destination_province: params.destination_province,
+				destination_city: params.destination_city,
+				carriers: params.carriers,
+				group_by: params.group_by || groupByFields
 			});
 			
 			if (response.data.success) {
@@ -523,13 +531,90 @@ export const Project = () => {
 		});
 	};
 
+	// 获取承运人列表
+	const fetchCarrierList = async () => {
+		try {
+			const response = await axios.post(`${backendUrl}/api/project/carrier/list`, {
+				project_name: currentProject?.project_name
+			});
+			if (response.data.success) {
+				setCarrierOptions(response.data.result.map(carrier => ({
+					label: carrier || '-',
+					value: carrier
+				})));
+			}
+		} catch (error) {
+			console.error('获取承运人列表失败:', error);
+		}
+	};
+
+	// 处理利润表筛选
+	const handleProfitFilter = async (values) => {
+		const filters = {};
+		
+		// 处理到达地
+		if (values.destination?.length) {
+			filters.destination_province = values.destination[0];
+			if (values.destination.length > 1) {
+				filters.destination_city = values.destination[1];
+			}
+		}
+		
+		// 处理承运人
+		if (values.carriers?.length) {
+			filters.carriers = values.carriers;
+		}
+		
+		// 更新筛选条件状态
+		await setProfitFilters(filters);
+		
+		// 重置到第一页
+		await setProfitPagination(prev => ({ ...prev, current: 1 }));
+		
+		// 使用最新的筛选条件获取数据
+		if (currentProject) {
+			await fetchProfitList(currentProject, { 
+				current: 1, 
+				pageSize: profitPagination.pageSize,
+				...filters
+			});
+		}
+	};
+
+	// 重置利润表筛选
+	const handleResetProfitFilter = async () => {
+		profitFilterForm.resetFields();
+		await setProfitFilters({});
+		await setProfitPagination(prev => ({ ...prev, current: 1 }));
+		if (currentProject) {
+			await fetchProfitList(currentProject, { 
+				current: 1, 
+				pageSize: profitPagination.pageSize 
+			});
+		}
+	};
+
+	// 处理汇总字段变化
+	const handleGroupByChange = (checkedValues) => {
+		setGroupByFields(checkedValues);
+		if (currentProject) {
+			fetchProfitList(currentProject, {
+				current: 1,
+				pageSize: profitPagination.pageSize,
+				...profitFilters,
+				group_by: checkedValues
+			});
+		}
+	};
+
 	// 查看项目详情
 	const handleViewPrice = async (project) => {
 		setCurrentProject(project);
 		setIsPriceModalOpen(true);
 		await Promise.all([
 			fetchPriceList(project, { current: 1, pageSize: 10 }),
-			fetchProfitList(project, { current: 1, pageSize: 10 })
+			fetchProfitList(project, { current: 1, pageSize: 10 }),
+			fetchCarrierList()
 		]);
 	};
 
@@ -966,16 +1051,74 @@ export const Project = () => {
 						/>
 					</Tabs.TabPane>
 					<Tabs.TabPane tab="利润表" key="2">
+						<div style={{ marginBottom: '16px' }}>
+							<Form.Item label="汇总条件" style={{ marginBottom: '8px' }}>
+								<Checkbox.Group
+									options={[
+										{ label: '到达省', value: 'province' },
+										{ label: '到达市', value: 'city' },
+										{ label: '承运人', value: 'carrier' }
+									]}
+									value={groupByFields}
+									onChange={handleGroupByChange}
+								/>
+							</Form.Item>
+							<Form
+								form={profitFilterForm}
+								layout="horizontal"
+								onFinish={handleProfitFilter}
+							>
+								<Row gutter={[16, 16]} align="middle" justify="space-between">
+									<Col span={8}>
+										<Form.Item name="destination" label="到达地" style={{ marginBottom: 0 }}>
+											<Cascader
+												options={getCascaderOptions()}
+												placeholder="请选择到达地"
+												showSearch
+												multiple
+												maxTagCount={2}
+												changeOnSelect
+												style={{ width: '100%' }}
+											/>
+										</Form.Item>
+									</Col>
+									<Col span={8}>
+										<Form.Item name="carriers" label="承运人" style={{ marginBottom: 0 }}>
+											<Select
+												mode="multiple"
+												placeholder="请选择承运人"
+												maxTagCount={2}
+												allowClear
+												style={{ width: '100%' }}
+												options={carrierOptions}
+											/>
+										</Form.Item>
+									</Col>
+									<Col span={8} style={{ textAlign: 'right', paddingRight: '8px' }}>
+										<Form.Item style={{ marginBottom: 0 }}>
+											<Space>
+												<Button type="primary" htmlType="submit">
+													筛选
+												</Button>
+												<Button onClick={handleResetProfitFilter}>
+													重置
+												</Button>
+											</Space>
+										</Form.Item>
+									</Col>
+								</Row>
+							</Form>
+						</div>
 						<Table
 							dataSource={profitList}
 							columns={[
 								{
-									title: '省份',
+									title: '到达省',
 									dataIndex: 'province',
 									key: 'province',
 								},
 								{
-									title: '城市',
+									title: '到达市',
 									dataIndex: 'city',
 									key: 'city',
 								},

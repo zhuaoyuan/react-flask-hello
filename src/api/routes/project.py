@@ -452,6 +452,38 @@ def upload_project_price_config():
         print(f"[事务回滚] 上传价格配置失败：{str(e)}")
         raise
 
+@project.route('/carrier/list', methods=['POST'])
+def get_carrier_list():
+    """获取项目下的承运人列表"""
+    data = request.get_json()
+    
+    try:
+        # 获取项目信息
+        project = ProjectInfo.query.filter_by(
+            project_name=data['project_name'],
+            is_deleted=0
+        ).first()
+        
+        if not project:
+            return error_response(ErrorCode.PROJECT_NOT_FOUND)
+
+        # 查询该项目下的所有不同承运人
+        carriers = db.session.query(
+            Order.carrier_name
+        ).filter(
+            Order.project_id == project.id,
+            Order.is_deleted == 0
+        ).distinct().all()
+        
+        # 转换为列表
+        carrier_list = [carrier[0] for carrier in carriers]
+        
+        return success_response(carrier_list)
+
+    except Exception as e:
+        print(f"获取承运人列表失败：{str(e)}")
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
 @project.route('/profit/list', methods=['POST'])
 def query_project_profit():
     """查询项目利润数据"""
@@ -467,22 +499,57 @@ def query_project_profit():
         if not project:
             return error_response(ErrorCode.PROJECT_NOT_FOUND)
 
-        # 查询该项目下的所有订单
-        query = db.session.query(
-            Order.destination_province.label('province'),
-            Order.destination_city.label('city'),
-            Order.carrier_name.label('carrier'),
+        # 获取分组字段
+        group_by = data.get('group_by', ['province', 'city', 'carrier'])
+        
+        # 构建查询字段
+        select_fields = []
+        group_by_fields = []
+        
+        # 动态添加分组字段
+        if 'province' in group_by:
+            select_fields.append(Order.destination_province.label('province'))
+            group_by_fields.append(Order.destination_province)
+        else:
+            select_fields.append(db.literal('全部').label('province'))
+            
+        if 'city' in group_by:
+            select_fields.append(Order.destination_city.label('city'))
+            group_by_fields.append(Order.destination_city)
+        else:
+            select_fields.append(db.literal('全部').label('city'))
+            
+        if 'carrier' in group_by:
+            select_fields.append(Order.carrier_name.label('carrier'))
+            group_by_fields.append(Order.carrier_name)
+        else:
+            select_fields.append(db.literal('全部').label('carrier'))
+        
+        # 添加聚合字段
+        select_fields.extend([
             db.func.sum(Order.amount).label('income'),
             db.func.sum(Order.carrier_fee).label('expense'),
             db.func.sum(Order.amount - Order.carrier_fee).label('profit')
-        ).filter(
+        ])
+
+        # 构建基础查询
+        query = db.session.query(*select_fields).filter(
             Order.project_id == project.id,
+            Order.carrier_type != None,
             Order.is_deleted == 0
-        ).group_by(
-            Order.destination_province,
-            Order.destination_city,
-            Order.carrier_name
         )
+
+        # 添加筛选条件
+        if data.get('destination_province'):
+            query = query.filter(Order.destination_province == data['destination_province'])
+        if data.get('destination_city'):
+            query = query.filter(Order.destination_city == data['destination_city'])
+        if data.get('carriers'):
+            query = query.filter(Order.carrier_name.in_(data['carriers']))
+
+        # 添加分组
+        if group_by_fields:
+            query = query.group_by(*group_by_fields)
 
         # 分页
         page = data.get('page', 1)
@@ -496,7 +563,7 @@ def query_project_profit():
         
         # 转换为字典列表
         result = [{
-            'id': f"{item.province}-{item.city}-{item.carrier}",  # 创建一个唯一标识
+            'id': '-'.join(str(getattr(item, field)) for field in ['province', 'city', 'carrier']),
             'province': item.province,
             'city': item.city,
             'carrier': item.carrier or '-',
