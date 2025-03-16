@@ -391,11 +391,6 @@ export const Project = () => {
 			}
 		}
 		
-		// 处理承运类型
-		if (values.carrier_type) {
-			filters.carrier_type = values.carrier_type;
-		}
-		
 		// 处理价格范围
 		if (values.price_min !== undefined) {
 			filters.price_min = values.price_min;
@@ -452,7 +447,6 @@ export const Project = () => {
 				departure_city: params.departure_city,
 				destination_province: params.destination_province,
 				destination_city: params.destination_city,
-				carrier_type: params.carrier_type,
 				price_min: params.price_min,
 				price_max: params.price_max
 			});
@@ -863,65 +857,67 @@ export const Project = () => {
 					<Tabs.TabPane tab="报价表" key="1">
 						<Form
 							form={priceFilterForm}
-							layout="inline"
+							layout="horizontal"
 							onFinish={handlePriceFilter}
 							style={{ marginBottom: '16px' }}
 						>
-							<Form.Item name="departure" label="出发地">
-								<Cascader
-									options={getCascaderOptions()}
-									placeholder="请选择出发地"
-									showSearch
-									changeOnSelect
-								/>
-							</Form.Item>
-							<Form.Item name="destination" label="到达地">
-								<Cascader
-									options={getCascaderOptions()}
-									placeholder="请选择到达地"
-									showSearch
-									changeOnSelect
-								/>
-							</Form.Item>
-							<Form.Item name="carrier_type" label="承运类型">
-								<Select
-									placeholder="请选择承运类型"
-									allowClear
-									style={{ width: 120 }}
-								>
-									<Select.Option value={1}>整车运输</Select.Option>
-									<Select.Option value={2}>零担运输</Select.Option>
-								</Select>
-							</Form.Item>
-							<Form.Item label="价格范围">
-								<Space>
-									<Form.Item name="price_min" noStyle>
-										<InputNumber
-											placeholder="最小值"
-											style={{ width: 100 }}
-											min={0}
+							<Row gutter={[16, 16]} align="middle" justify="space-between">
+								<Col span={5}>
+									<Form.Item name="departure" label="出发地" style={{ marginBottom: 0 }}>
+										<Cascader
+											options={getCascaderOptions()}
+											placeholder="请选择出发地"
+											showSearch
+											changeOnSelect
+											style={{ width: '100%' }}
 										/>
 									</Form.Item>
-									<span>-</span>
-									<Form.Item name="price_max" noStyle>
-										<InputNumber
-											placeholder="最大值"
-											style={{ width: 100 }}
-											min={0}
+								</Col>
+								<Col span={5}>
+									<Form.Item name="destination" label="到达地" style={{ marginBottom: 0 }}>
+										<Cascader
+											options={getCascaderOptions()}
+											placeholder="请选择到达地"
+											showSearch
+											changeOnSelect
+											style={{ width: '100%' }}
 										/>
 									</Form.Item>
-								</Space>
-							</Form.Item>
-							<Form.Item>
-								<Space>
-									<Button type="primary" htmlType="submit">
-										筛选
-									</Button>
-									<Button onClick={handleResetPriceFilter}>
-										重置
-									</Button>
-								</Space>
-							</Form.Item>
+								</Col>
+								<Col span={8}>
+									<Form.Item label="价格范围" style={{ marginBottom: 0 }}>
+										<Input.Group compact>
+											<Form.Item name="price_min" noStyle>
+												<InputNumber
+													placeholder="最小值"
+													style={{ width: 90 }}
+													min={0}
+												/>
+											</Form.Item>
+											<span style={{ padding: '0 8px' }}>-</span>
+											<Form.Item name="price_max" noStyle>
+												<InputNumber
+													placeholder="最大值"
+													style={{ width: 90 }}
+													min={0}
+												/>
+											</Form.Item>
+										</Input.Group>
+									</Form.Item>
+								</Col>
+								<Col span={6} style={{ textAlign: 'right', paddingRight: '8px' }}>
+									<Form.Item style={{ marginBottom: 0 }}>
+										<Space>
+											<Button type="primary" htmlType="submit">
+												筛选
+											</Button>
+											<Button onClick={handleResetPriceFilter}>
+												重置
+											</Button>
+										</Space>
+									</Form.Item>
+								</Col>
+							</Row>
 						</Form>
 						<Table
 							dataSource={priceList}
@@ -945,12 +941,6 @@ export const Project = () => {
 									title: '到达市',
 									dataIndex: 'destination_city',
 									key: 'destination_city',
-								},
-								{
-									title: '承运类型',
-									dataIndex: 'carrier_type',
-									key: 'carrier_type',
-									render: (type) => type === 1 ? '整车运输' : '零担运输',
 								},
 								{
 									title: '价格（元/吨）',
