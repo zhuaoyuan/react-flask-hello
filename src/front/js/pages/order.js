@@ -34,6 +34,7 @@ export const Order = () => {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [editForm] = Form.useForm();
     const [editingOrder, setEditingOrder] = useState(null);
+    const [selectedProject, setSelectedProject] = useState(null);
 
     // 获取项目列表
     const fetchProjects = async () => {
@@ -54,7 +55,14 @@ export const Order = () => {
                 
                 // 如果有项目，自动选中第一个并触发查询
                 if (projectList.length > 0) {
-                    form.setFieldValue('project_name', projectList[0].project_name);
+                    const firstProject = projectList[0];
+                    // 同时设置表单中的项目名称和项目选择器的值
+                    form.setFieldsValue({
+                        project_name: firstProject.project_name,
+                        project: firstProject.value
+                    });
+                    // 设置选择器的值
+                    setSelectedProject(firstProject.value);
                     fetchOrders({ current: 1 });
                 }
             } else {
@@ -651,10 +659,12 @@ export const Order = () => {
                             loading={projectLoading}
                             allowClear
                             showSearch
+                            value={selectedProject}
                             filterOption={(input, option) =>
                                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                             }
                             onChange={(value) => {
+                                setSelectedProject(value);
                                 const selectedProject = projects.find(p => p.value === value);
                                 form.setFieldValue('project_name', selectedProject?.project_name);
                                 fetchOrders({ current: 1 });
