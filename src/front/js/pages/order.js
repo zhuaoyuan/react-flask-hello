@@ -506,13 +506,13 @@ export const Order = () => {
             key: 'order_number',
             title: '订单号',
             dataIndex: 'order_number',
-            width: 160,
+            width: 140,
         },
         {
             key: 'sub_order_number',
             title: '子订单号',
             dataIndex: 'sub_order_number',
-            width: 160,
+            width: 140,
         },
         {
             key: 'order_date',
@@ -524,7 +524,7 @@ export const Order = () => {
             key: 'cargo_info',
             title: '货物信息',
             dataIndex: 'cargo_info',
-            width: 240,
+            width: 150,
             render: (text) => (
                 <div style={{ whiteSpace: 'pre-line' }}>
                     {text?.split('\n').map((line, index) => (
@@ -537,26 +537,26 @@ export const Order = () => {
             key: 'departure',
             title: '出发地',
             dataIndex: 'departure',
-            width: 180,
+            width: 120,
         },
         {
             key: 'destination',
             title: '送达地址',
             dataIndex: 'destination',
-            width: 300,
+            width: 200,
         },
         {
             key: 'amount',
             title: '客户报价',
             dataIndex: 'amount',
-            width: 120,
+            width: 80,
             render: (text) => `¥${text.toFixed(2)}`
         },
         {
             key: 'carrier_type',
             title: '承运类型',
             dataIndex: 'carrier_type',
-            width: 100,
+            width: 80,
             render: (text) => {
                 if (text === null || text === undefined) return '-';
                 return text === 1 ? '司机直送' : '承运商';
@@ -566,7 +566,7 @@ export const Order = () => {
             key: 'carrier_info',
             title: '承运人信息',
             dataIndex: 'carrier_info',
-            width: 200,
+            width: 150,
             render: (_, record) => {
                 const info = [];
                 if (record.carrier_name) info.push(`姓名：${record.carrier_name}`);
@@ -583,14 +583,14 @@ export const Order = () => {
             key: 'carrier_fee',
             title: '运费',
             dataIndex: 'carrier_fee',
-            width: 120,
+            width: 80,
             render: (text) => text ? `¥${Number(text).toFixed(2)}` : '-'
         },
         {
             key: 'remark',
             title: '备注',
             dataIndex: 'remark',
-            width: 200,
+            width: 150,
         },
         {
             key: 'action',
@@ -670,17 +670,17 @@ export const Order = () => {
                         </Button>
                         <Upload
                             accept=".xlsx,.xls"
-                            beforeUpload={handleImportDelivery}
-                            showUploadList={false}
-                        >
-                            <Button type="primary" icon={<UploadOutlined />}>导入送货信息</Button>
-                        </Upload>
-                        <Upload
-                            accept=".xlsx,.xls"
                             beforeUpload={handleImportOrder}
                             showUploadList={false}
                         >
                             <Button type="primary" icon={<UploadOutlined />}>导入订单</Button>
+                        </Upload>
+                        <Upload
+                            accept=".xlsx,.xls"
+                            beforeUpload={handleImportDelivery}
+                            showUploadList={false}
+                        >
+                            <Button type="primary" icon={<UploadOutlined />}>导入送货信息</Button>
                         </Upload>
                     </Space>
                 </div>
