@@ -53,10 +53,6 @@ def validate_price_config(price_config):
         elif item['destination_city'] not in provinces_and_cities[item['destination_province']]:
             errors.append(f"第 {index + 1} 行：到达市 '{item['destination_city']}' 不是 {item['destination_province']} 的城市")
 
-        # 验证承运类型
-        if item['transport_type'] not in TRANSPORT_TYPES:
-            errors.append(f"第 {index + 1} 行：承运类型必须是 '整车运输' 或 '零担运输'")
-
         # 验证唯一性
         key = f"{item['departure_province']}-{item['departure_city']}-{item['destination_province']}-{item['destination_city']}"
         if key in unique_keys:
@@ -293,7 +289,6 @@ def create_project():
                 departure_city=config['departure_city'],
                 destination_province=config['destination_province'],
                 destination_city=config['destination_city'],
-                carrier_type=1 if config['transport_type'] == '整车运输' else 2,
                 tonnage_upper_limit=999999,
                 tonnage_lower_limit=0,
                 unit_price=config['price']
@@ -342,9 +337,6 @@ def query_project_price_config():
         if data.get('destination_city'):
             query = query.filter(ProjectPriceConfig.destination_city == data['destination_city'])
             
-        if data.get('carrier_type'):
-            query = query.filter(ProjectPriceConfig.carrier_type == data['carrier_type'])
-            
         if data.get('price_min') is not None:
             query = query.filter(ProjectPriceConfig.unit_price >= data['price_min'])
         if data.get('price_max') is not None:
@@ -365,7 +357,6 @@ def query_project_price_config():
             'departure_city': item.departure_city,
             'destination_province': item.destination_province,
             'destination_city': item.destination_city,
-            'carrier_type': item.carrier_type,
             'unit_price': float(item.unit_price)
         } for item in items]
 
@@ -389,6 +380,7 @@ def upload_project_price_config():
         return error_response(ErrorCode.BAD_REQUEST)
 
     new_prices = []
+    updated_prices = []
     error_messages = []
 
     for index, price in enumerate(price_data.get('upload_list')):
@@ -425,29 +417,50 @@ def upload_project_price_config():
             error_messages.append(f"第{sheet_index}行：目的城市 '{destination_city}' 不属于省份 '{destination_province}'")
             continue
 
-        new_price = ProjectPriceConfig(
+        # 查找是否存在相同的价格配置
+        existing_price = ProjectPriceConfig.query.filter_by(
             project_id=price['project_id'],
-            project_name=price['project_name'],
             departure_province=departure_province,
             departure_city=departure_city,
             destination_province=destination_province,
             destination_city=destination_city,
-            carrier_type=1,
-            tonnage_upper_limit=999999,
-            tonnage_lower_limit=0,
-            unit_price=price['unit_price']
-        )
-        new_prices.append(new_price)
+            is_deleted=0
+        ).with_for_update().first()
+
+        if existing_price:
+            # 更新已存在的价格配置
+            existing_price.unit_price = price['unit_price']
+            updated_prices.append(existing_price)
+        else:
+            # 创建新的价格配置
+            new_price = ProjectPriceConfig(
+                project_id=price['project_id'],
+                project_name=price['project_name'],
+                departure_province=departure_province,
+                departure_city=departure_city,
+                destination_province=destination_province,
+                destination_city=destination_city,
+                tonnage_upper_limit=999999,
+                tonnage_lower_limit=0,
+                unit_price=price['unit_price']
+            )
+            new_prices.append(new_price)
 
     try:
         if error_messages:
             error_message = "\n".join(error_messages)
             return error_response(ErrorCode.BAD_REQUEST, error_message)
+
+        # 批量更新和新增
+        if updated_prices:
+            for price in updated_prices:
+                db.session.add(price)
         if new_prices:
             db.session.add_all(new_prices)
-            return success_response()
-        else:
-            return error_response(ErrorCode.BAD_REQUEST)
+
+        return success_response({
+            'message': f'成功更新{len(updated_prices)}条记录，新增{len(new_prices)}条记录'
+        })
     except Exception as e:
         print(f"[事务回滚] 上传价格配置失败：{str(e)}")
         raise

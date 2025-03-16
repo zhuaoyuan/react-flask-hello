@@ -35,11 +35,6 @@ const validatePriceData = (data) => {
 			errors.push(`第 ${index + 1} 行：到达市 "${item.destination_city}" 不是 ${item.destination_province} 的城市`);
 		}
 
-		// 校验承运类型
-		if (!TRANSPORT_TYPES.includes(item.transport_type)) {
-			errors.push(`第 ${index + 1} 行：承运类型必须是 "整车运输" 或 "零担运输"`);
-		}
-
 		// 校验唯一性
 		const key = `${item.departure_province}-${item.departure_city}-${item.destination_province}-${item.destination_city}`;
 		if (uniqueKeys.has(key)) {
@@ -204,9 +199,9 @@ export const Project = () => {
 			});
 			responseHandler(response.data, () => {
 				message.success('编辑成功');
-				setIsModalOpen(false);
-				setEditData(null);
-				editForm.resetFields();
+			setIsModalOpen(false);
+			setEditData(null);
+			editForm.resetFields();
 				fetchData(pagination);
 			});
 		} catch (error) {
@@ -240,7 +235,6 @@ export const Project = () => {
 					departure_city: row['出发市'],
 					destination_province: row['到达省'],
 					destination_city: row['到达市'],
-					transport_type: row['承运类型'],
 					price: Number(row['价格（元/吨）'])
 				}));
 
@@ -337,7 +331,6 @@ export const Project = () => {
 				'出发市': '杭州市',
 				'到达省': '江苏省',
 				'到达市': '南京市',
-				'承运类型': '整车运输',
 				'价格（元/吨）': 1000
 			}
 		];
@@ -351,7 +344,6 @@ export const Project = () => {
 			{wch: 15}, // 出发市
 			{wch: 15}, // 到达省
 			{wch: 15}, // 到达市
-			{wch: 15}, // 承运类型
 			{wch: 15}  // 价格
 		];
 		ws['!cols'] = wscols;
@@ -618,50 +610,122 @@ export const Project = () => {
 		]);
 	};
 
+	// 处理价格表导入
+	const handlePriceImport = (file) => {
+		const reader = new FileReader();
+		reader.onload = async (e) => {
+			try {
+				const data = e.target.result;
+				const workbook = XLSX.read(data, { type: 'binary' });
+				const sheetName = workbook.SheetNames[0];
+				const worksheet = workbook.Sheets[sheetName];
+				const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+				// 转换数据格式
+				const priceData = jsonData.map(row => ({
+					project_id: currentProject.id,
+					project_name: currentProject.project_name,
+					departure_province: row['出发省'],
+					departure_city: row['出发市'],
+					destination_province: row['到达省'],
+					destination_city: row['到达市'],
+					unit_price: Number(row['价格（元/吨）'])
+				}));
+
+				// 校验数据
+				const errors = validatePriceData(priceData.map(item => ({
+					departure_province: item.departure_province,
+					departure_city: item.departure_city,
+					destination_province: item.destination_province,
+					destination_city: item.destination_city,
+					price: item.unit_price
+				})));
+
+				if (errors.length > 0) {
+					Modal.error({
+						title: '数据验证失败',
+						content: (
+							<div style={{ maxHeight: '300px', overflow: 'auto' }}>
+								{errors.map((error, index) => (
+									<p key={index}>{error}</p>
+								))}
+							</div>
+						),
+					});
+					return;
+				}
+
+				// 提交数据到后端
+				const response = await axios.post(`${backendUrl}/api/project/price_config/upload`, {
+					upload_list: priceData
+				});
+
+				if (response.data.success) {
+					message.success(response.data.result.message);
+					// 重新获取价格列表
+					fetchPriceList(currentProject, {
+						current: 1,
+						pageSize: pricePagination.pageSize
+					});
+				} else {
+					Modal.error({
+						title: '导入失败',
+						content: response.data.error_message
+					});
+				}
+			} catch (error) {
+				console.error('Excel 解析错误:', error);
+				message.error('Excel 文件解析失败');
+			}
+		};
+		reader.readAsBinaryString(file);
+		return false; // 阻止自动上传
+	};
+
 	return (
 		<div style={{ padding: '24px' }}>
 			<Card>
-				<Form
-					form={queryForm}
-					layout="vertical"
-					onFinish={fetchData}
-					initialValues={{ name: '' }}
+			<Form
+				form={queryForm}
+				layout="vertical"
+				onFinish={fetchData}
+				initialValues={{ name: '' }}
 					style={{ marginBottom: '24px' }}
-				>
+			>
 					<Row gutter={16}>
 						<Col span={8}>
-							<Form.Item label="搜索" name="search">
-								<Input
+				<Form.Item label="搜索" name="search">
+					<Input
 									placeholder="输入项目名称或客户名称"
-									value={searchQuery}
-									onChange={(e) => setSearchQuery(e.target.value)}
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
 									prefix={<SearchOutlined />}
 									allowClear
-								/>
-							</Form.Item>
+					/>
+				</Form.Item>
 						</Col>
 						<Col span={16}>
 							<Form.Item label="操作" style={{ marginBottom: 0 }}>
-								<Space>
+					<Space>
 									<Button 
 										type="primary" 
 										icon={<SearchOutlined />}
 										onClick={() => fetchData(pagination)}
 									>
-										查询
-									</Button>
+							查询
+						</Button>
 									<Button 
 										type="primary"
 										icon={<PlusOutlined />}
 										onClick={handleCreate}
 									>
 										新建
-									</Button>
-								</Space>
-							</Form.Item>
+						</Button>
+					</Space>
+				</Form.Item>
 						</Col>
 					</Row>
-				</Form>
+			</Form>
 
 				<Row gutter={[16, 16]}>
 					{data.map(project => (
@@ -778,7 +842,7 @@ export const Project = () => {
 					</Row>
 
 					<Form.Item label="报价表">
-						<Table
+			<Table
 							dataSource={priceTableData}
 							columns={[
 								{
@@ -800,11 +864,6 @@ export const Project = () => {
 									title: '到达市',
 									dataIndex: 'destination_city',
 									key: 'destination_city',
-								},
-								{
-									title: '承运类型',
-									dataIndex: 'transport_type',
-									key: 'transport_type',
 								},
 								{
 									title: '价格（元/吨）',
@@ -885,7 +944,7 @@ export const Project = () => {
 								rules={[{ required: true, message: '请输入项目名称' }]}
 							>
 								<Input placeholder="请输入项目名称" />
-							</Form.Item>
+					</Form.Item>
 						</Col>
 						<Col span={12}>
 							<Form.Item 
@@ -894,7 +953,7 @@ export const Project = () => {
 								rules={[{ required: true, message: '请输入客户名称' }]}
 							>
 								<Input placeholder="请输入客户名称" />
-							</Form.Item>
+					</Form.Item>
 						</Col>
 					</Row>
 					<Row gutter={16}>
@@ -905,7 +964,7 @@ export const Project = () => {
 								rules={[{ required: true, message: '请选择合作起始时间' }]}
 							>
 								<DatePicker style={{ width: '100%' }} />
-							</Form.Item>
+					</Form.Item>
 						</Col>
 						<Col span={12}>
 							<Form.Item 
@@ -914,7 +973,7 @@ export const Project = () => {
 								rules={[{ required: true, message: '请选择合作结束时间' }]}
 							>
 								<DatePicker style={{ width: '100%' }} />
-							</Form.Item>
+					</Form.Item>
 						</Col>
 					</Row>
 					<Form.Item 
@@ -1028,12 +1087,6 @@ export const Project = () => {
 									key: 'destination_city',
 								},
 								{
-									title: '承运类型',
-									dataIndex: 'carrier_type',
-									key: 'carrier_type',
-									render: (type) => type === 1 ? '整车运输' : '零担运输',
-								},
-								{
 									title: '价格（元/吨）',
 									dataIndex: 'unit_price',
 									key: 'unit_price',
@@ -1049,6 +1102,23 @@ export const Project = () => {
 							}}
 							rowKey="id"
 						/>
+						<div style={{ marginTop: '16px' }}>
+							<Space>
+								<Upload
+									accept=".xlsx,.xls"
+									beforeUpload={handlePriceImport}
+									showUploadList={false}
+								>
+									<Button icon={<UploadOutlined />}>Excel 导入</Button>
+								</Upload>
+								<Button
+									icon={<DownloadOutlined />}
+									onClick={handleDownloadTemplate}
+								>
+									下载导入模板
+								</Button>
+							</Space>
+						</div>
 					</Tabs.TabPane>
 					<Tabs.TabPane tab="利润表" key="2">
 						<div style={{ marginBottom: '16px' }}>

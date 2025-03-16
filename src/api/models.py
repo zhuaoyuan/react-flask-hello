@@ -76,7 +76,6 @@ class ProjectPriceConfig(db.Model):
     departure_city = db.Column(db.String(20), nullable=False, comment='出发市')
     destination_province = db.Column(db.String(20), nullable=False, comment='到达省')
     destination_city = db.Column(db.String(20), nullable=False, comment='到达市')
-    carrier_type = db.Column(db.Integer, nullable=False, comment='承运类型')
     tonnage_upper_limit = db.Column(db.Integer, nullable=False, comment='吨位上限')
     tonnage_lower_limit = db.Column(db.Integer, nullable=False, comment='吨位下限')
     unit_price = db.Column(db.Integer, nullable=False, comment='单价')
