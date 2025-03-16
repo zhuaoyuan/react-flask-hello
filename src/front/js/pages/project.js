@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload } from 'antd';
+import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, Cascader, InputNumber, Select } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
@@ -74,6 +74,11 @@ export const Project = () => {
 	const [priceLoading, setPriceLoading] = useState(false);
 	const [pricePagination, setPricePagination] = useState({ current: 1, pageSize: 10, total: 0 });
 	const [priceList, setPriceList] = useState([]);
+	const [profitList, setProfitList] = useState([]);
+	const [profitLoading, setProfitLoading] = useState(false);
+	const [profitPagination, setProfitPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+	const [priceFilterForm] = Form.useForm();
+	const [priceFilters, setPriceFilters] = useState({});
 
 	const fetchData = async (params = {}) => {
 		setLoading(true);
@@ -354,21 +359,102 @@ export const Project = () => {
 		XLSX.writeFile(wb, '价格配置导入模板.xlsx');
 	};
 
-	// 查看价格表
-	const handleViewPrice = async (project) => {
-		setCurrentProject(project);
-		setIsPriceModalOpen(true);
-		await fetchPriceList(project, { current: 1, pageSize: 10 });
+	// 将省市数据转换为级联选择器需要的格式
+	const getCascaderOptions = () => {
+		return Object.entries(provinces_and_cities).map(([province, cities]) => ({
+			value: province,
+			label: province,
+			children: cities.map(city => ({
+				value: city,
+				label: city,
+			}))
+		}));
+	};
+
+	// 处理价格筛选
+	const handlePriceFilter = async (values) => {
+		const filters = {};
+		
+		// 处理出发地
+		if (values.departure?.length) {
+			filters.departure_province = values.departure[0];
+			if (values.departure.length > 1) {
+				filters.departure_city = values.departure[1];
+			}
+		}
+		
+		// 处理到达地
+		if (values.destination?.length) {
+			filters.destination_province = values.destination[0];
+			if (values.destination.length > 1) {
+				filters.destination_city = values.destination[1];
+			}
+		}
+		
+		// 处理承运类型
+		if (values.carrier_type) {
+			filters.carrier_type = values.carrier_type;
+		}
+		
+		// 处理价格范围
+		if (values.price_min !== undefined) {
+			filters.price_min = values.price_min;
+		}
+		if (values.price_max !== undefined) {
+			filters.price_max = values.price_max;
+		}
+		
+		// 先更新筛选条件状态
+		await setPriceFilters(filters);
+		
+		// 重置到第一页
+		await setPricePagination(prev => ({ ...prev, current: 1 }));
+		
+		// 使用最新的筛选条件获取数据
+		if (currentProject) {
+			await fetchPriceList(currentProject, { 
+				current: 1, 
+				pageSize: pricePagination.pageSize,
+				...filters  // 直接使用当前的筛选条件，而不是依赖状态
+			});
+		}
+	};
+
+	// 重置价格筛选
+	const handleResetPriceFilter = async () => {
+		// 重置表单
+		priceFilterForm.resetFields();
+		
+		// 清空筛选条件
+		await setPriceFilters({});
+		
+		// 重置到第一页
+		await setPricePagination(prev => ({ ...prev, current: 1 }));
+		
+		// 重新获取数据
+		if (currentProject) {
+			await fetchPriceList(currentProject, { 
+				current: 1, 
+				pageSize: pricePagination.pageSize 
+			});
+		}
 	};
 
 	// 获取价格列表
 	const fetchPriceList = async (project, params = {}) => {
 		setPriceLoading(true);
 		try {
-			const response = await axios.post(`${backendUrl}/api/project_price_config/list`, {
+			const response = await axios.post(`${backendUrl}/api/project/price_config/list`, {
 				project_name: project.project_name,
 				page: params.current || 1,
 				per_page: params.pageSize || 10,
+				departure_province: params.departure_province,
+				departure_city: params.departure_city,
+				destination_province: params.destination_province,
+				destination_city: params.destination_city,
+				carrier_type: params.carrier_type,
+				price_min: params.price_min,
+				price_max: params.price_max
 			});
 			
 			if (response.data.success) {
@@ -389,6 +475,34 @@ export const Project = () => {
 		}
 	};
 
+	// 获取利润列表
+	const fetchProfitList = async (project, params = {}) => {
+		setProfitLoading(true);
+		try {
+			const response = await axios.post(`${backendUrl}/api/project/profit/list`, {
+				project_name: project.project_name,
+				page: params.current || 1,
+				per_page: params.pageSize || 10,
+			});
+			
+			if (response.data.success) {
+				const result = response.data.result;
+				setProfitList(result.items);
+				setProfitPagination({
+					...params,
+					total: result.total,
+				});
+			} else {
+				message.error('获取利润数据失败');
+			}
+		} catch (error) {
+			console.error(error);
+			message.error('获取利润数据失败');
+		} finally {
+			setProfitLoading(false);
+		}
+	};
+
 	// 处理价格表分页变化
 	const handlePricePageChange = (page, pageSize) => {
 		setPricePagination({
@@ -400,6 +514,29 @@ export const Project = () => {
 			current: page,
 			pageSize: pageSize,
 		});
+	};
+
+	// 处理利润表分页变化
+	const handleProfitPageChange = (page, pageSize) => {
+		setProfitPagination({
+			...profitPagination,
+			current: page,
+			pageSize: pageSize,
+		});
+		fetchProfitList(currentProject, {
+			current: page,
+			pageSize: pageSize,
+		});
+	};
+
+	// 查看项目详情
+	const handleViewPrice = async (project) => {
+		setCurrentProject(project);
+		setIsPriceModalOpen(true);
+		await Promise.all([
+			fetchPriceList(project, { current: 1, pageSize: 10 }),
+			fetchProfitList(project, { current: 1, pageSize: 10 })
+		]);
 	};
 
 	return (
@@ -476,7 +613,7 @@ export const Project = () => {
 										onClick={() => handleViewPrice(project)}
 										key="view"
 									>
-										查看价格表
+										查看详情
 									</Button>
 								]}
 							>
@@ -716,57 +853,172 @@ export const Project = () => {
 			</Modal>
 
 			<Modal
-				title={`价格配置 - ${currentProject?.project_name}`}
+				title={`项目详情 - ${currentProject?.project_name}`}
 				open={isPriceModalOpen}
 				onCancel={() => setIsPriceModalOpen(false)}
 				width={1000}
 				footer={null}
 			>
-				<Table
-					dataSource={priceList}
-					columns={[
-						{
-							title: '出发省',
-							dataIndex: 'departure_province',
-							key: 'departure_province',
-						},
-						{
-							title: '出发市',
-							dataIndex: 'departure_city',
-							key: 'departure_city',
-						},
-						{
-							title: '到达省',
-							dataIndex: 'destination_province',
-							key: 'destination_province',
-						},
-						{
-							title: '到达市',
-							dataIndex: 'destination_city',
-							key: 'destination_city',
-						},
-						{
-							title: '承运类型',
-							dataIndex: 'carrier_type',
-							key: 'carrier_type',
-							render: (type) => type === 1 ? '整车运输' : '零担运输',
-						},
-						{
-							title: '价格（元/吨）',
-							dataIndex: 'unit_price',
-							key: 'unit_price',
-						},
-					]}
-					loading={priceLoading}
-					pagination={{
-						...pricePagination,
-						onChange: handlePricePageChange,
-						showSizeChanger: true,
-						showQuickJumper: true,
-						showTotal: (total) => `共 ${total} 条记录`,
-					}}
-					rowKey="id"
-				/>
+				<Tabs defaultActiveKey="1">
+					<Tabs.TabPane tab="报价表" key="1">
+						<Form
+							form={priceFilterForm}
+							layout="inline"
+							onFinish={handlePriceFilter}
+							style={{ marginBottom: '16px' }}
+						>
+							<Form.Item name="departure" label="出发地">
+								<Cascader
+									options={getCascaderOptions()}
+									placeholder="请选择出发地"
+									showSearch
+									changeOnSelect
+								/>
+							</Form.Item>
+							<Form.Item name="destination" label="到达地">
+								<Cascader
+									options={getCascaderOptions()}
+									placeholder="请选择到达地"
+									showSearch
+									changeOnSelect
+								/>
+							</Form.Item>
+							<Form.Item name="carrier_type" label="承运类型">
+								<Select
+									placeholder="请选择承运类型"
+									allowClear
+									style={{ width: 120 }}
+								>
+									<Select.Option value={1}>整车运输</Select.Option>
+									<Select.Option value={2}>零担运输</Select.Option>
+								</Select>
+							</Form.Item>
+							<Form.Item label="价格范围">
+								<Space>
+									<Form.Item name="price_min" noStyle>
+										<InputNumber
+											placeholder="最小值"
+											style={{ width: 100 }}
+											min={0}
+										/>
+									</Form.Item>
+									<span>-</span>
+									<Form.Item name="price_max" noStyle>
+										<InputNumber
+											placeholder="最大值"
+											style={{ width: 100 }}
+											min={0}
+										/>
+									</Form.Item>
+								</Space>
+							</Form.Item>
+							<Form.Item>
+								<Space>
+									<Button type="primary" htmlType="submit">
+										筛选
+									</Button>
+									<Button onClick={handleResetPriceFilter}>
+										重置
+									</Button>
+								</Space>
+							</Form.Item>
+						</Form>
+						<Table
+							dataSource={priceList}
+							columns={[
+								{
+									title: '出发省',
+									dataIndex: 'departure_province',
+									key: 'departure_province',
+								},
+								{
+									title: '出发市',
+									dataIndex: 'departure_city',
+									key: 'departure_city',
+								},
+								{
+									title: '到达省',
+									dataIndex: 'destination_province',
+									key: 'destination_province',
+								},
+								{
+									title: '到达市',
+									dataIndex: 'destination_city',
+									key: 'destination_city',
+								},
+								{
+									title: '承运类型',
+									dataIndex: 'carrier_type',
+									key: 'carrier_type',
+									render: (type) => type === 1 ? '整车运输' : '零担运输',
+								},
+								{
+									title: '价格（元/吨）',
+									dataIndex: 'unit_price',
+									key: 'unit_price',
+								},
+							]}
+							loading={priceLoading}
+							pagination={{
+								...pricePagination,
+								onChange: handlePricePageChange,
+								showSizeChanger: true,
+								showQuickJumper: true,
+								showTotal: (total) => `共 ${total} 条记录`,
+							}}
+							rowKey="id"
+						/>
+					</Tabs.TabPane>
+					<Tabs.TabPane tab="利润表" key="2">
+						<Table
+							dataSource={profitList}
+							columns={[
+								{
+									title: '省份',
+									dataIndex: 'province',
+									key: 'province',
+								},
+								{
+									title: '城市',
+									dataIndex: 'city',
+									key: 'city',
+								},
+								{
+									title: '承运人',
+									dataIndex: 'carrier',
+									key: 'carrier',
+								},
+								{
+									title: '收入',
+									dataIndex: 'income',
+									key: 'income',
+									render: (text) => `¥${text.toFixed(2)}`
+								},
+								{
+									title: '支出',
+									dataIndex: 'expense',
+									key: 'expense',
+									render: (text) => `¥${text.toFixed(2)}`
+								},
+								{
+									title: '利润',
+									dataIndex: 'profit',
+									key: 'profit',
+									render: (text) => `¥${text.toFixed(2)}`
+								}
+							]}
+							loading={profitLoading}
+							pagination={{
+								...profitPagination,
+								onChange: handleProfitPageChange,
+								showSizeChanger: true,
+								showQuickJumper: true,
+								showTotal: (total) => `共 ${total} 条记录`,
+							}}
+							rowKey="id"
+						/>
+					</Tabs.TabPane>
+				</Tabs>
 			</Modal>
 		</div>
 	);

@@ -316,46 +316,68 @@ def query_project_price_config():
     data = request.get_json()
     
     try:
-        query = ProjectPriceConfig.query.join(
-            ProjectInfo,
-            ProjectPriceConfig.project_id == ProjectInfo.id
-        ).filter(
-            ProjectInfo.is_deleted == 0,
+        # 获取项目信息
+        project = ProjectInfo.query.filter_by(
+            project_name=data['project_name'],
+            is_deleted=0
+        ).first()
+        
+        if not project:
+            return error_response(ErrorCode.PROJECT_NOT_FOUND)
+
+        # 查询价格配置
+        query = ProjectPriceConfig.query.filter(
+            ProjectPriceConfig.project_id == project.id,
             ProjectPriceConfig.is_deleted == 0
         )
-        
-        if 'project_name' in data and data['project_name']:
-            query = query.filter(ProjectInfo.project_name == data['project_name'])
-        
-        if 'departure_province' in data and data['departure_province']:
-            query = query.filter(ProjectPriceConfig.departure_province == data['departure_province'])
-            if 'departure_city' in data and data['departure_city']:
-                query = query.filter(ProjectPriceConfig.departure_city == data['departure_city'])
 
+        # 添加筛选条件
+        if data.get('departure_province'):
+            query = query.filter(ProjectPriceConfig.departure_province == data['departure_province'])
+        if data.get('departure_city'):
+            query = query.filter(ProjectPriceConfig.departure_city == data['departure_city'])
+            
+        if data.get('destination_province'):
+            query = query.filter(ProjectPriceConfig.destination_province == data['destination_province'])
+        if data.get('destination_city'):
+            query = query.filter(ProjectPriceConfig.destination_city == data['destination_city'])
+            
+        if data.get('carrier_type'):
+            query = query.filter(ProjectPriceConfig.carrier_type == data['carrier_type'])
+            
+        if data.get('price_min') is not None:
+            query = query.filter(ProjectPriceConfig.unit_price >= data['price_min'])
+        if data.get('price_max') is not None:
+            query = query.filter(ProjectPriceConfig.unit_price <= data['price_max'])
+
+        # 分页
         page = data.get('page', 1)
         per_page = data.get('per_page', 10)
+        
+        # 获取分页数据
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        items = pagination.items
 
-        items = [{
+        # 转换为字典列表
+        result = [{
             'id': item.id,
-            'project_id': item.project_id,
-            'project_name': item.project_name,
             'departure_province': item.departure_province,
             'departure_city': item.departure_city,
             'destination_province': item.destination_province,
             'destination_city': item.destination_city,
             'carrier_type': item.carrier_type,
-            'unit_price': item.unit_price
-        } for item in pagination.items]
+            'unit_price': float(item.unit_price)
+        } for item in items]
 
         return success_response({
-            'items': items,
+            'items': result,
             'total': pagination.total,
             'pages': pagination.pages,
             'current_page': page
         })
 
     except Exception as e:
+        print(f"查询价格配置失败：{str(e)}")
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @project.route('/price_config/upload', methods=['POST'])
@@ -428,4 +450,68 @@ def upload_project_price_config():
             return error_response(ErrorCode.BAD_REQUEST)
     except Exception as e:
         print(f"[事务回滚] 上传价格配置失败：{str(e)}")
-        raise 
+        raise
+
+@project.route('/profit/list', methods=['POST'])
+def query_project_profit():
+    """查询项目利润数据"""
+    data = request.get_json()
+    
+    try:
+        # 获取项目信息
+        project = ProjectInfo.query.filter_by(
+            project_name=data['project_name'],
+            is_deleted=0
+        ).first()
+        
+        if not project:
+            return error_response(ErrorCode.PROJECT_NOT_FOUND)
+
+        # 查询该项目下的所有订单
+        query = db.session.query(
+            Order.destination_province.label('province'),
+            Order.destination_city.label('city'),
+            Order.carrier_name.label('carrier'),
+            db.func.sum(Order.amount).label('income'),
+            db.func.sum(Order.carrier_fee).label('expense'),
+            db.func.sum(Order.amount - Order.carrier_fee).label('profit')
+        ).filter(
+            Order.project_id == project.id,
+            Order.is_deleted == 0
+        ).group_by(
+            Order.destination_province,
+            Order.destination_city,
+            Order.carrier_name
+        )
+
+        # 分页
+        page = data.get('page', 1)
+        per_page = data.get('per_page', 10)
+        
+        # 计算总数
+        total_query = query.from_self().count()
+        
+        # 获取分页数据
+        items = query.offset((page - 1) * per_page).limit(per_page).all()
+        
+        # 转换为字典列表
+        result = [{
+            'id': f"{item.province}-{item.city}-{item.carrier}",  # 创建一个唯一标识
+            'province': item.province,
+            'city': item.city,
+            'carrier': item.carrier or '-',
+            'income': float(item.income or 0),
+            'expense': float(item.expense or 0),
+            'profit': float(item.profit or 0)
+        } for item in items]
+
+        return success_response({
+            'items': result,
+            'total': total_query,
+            'pages': (total_query + per_page - 1) // per_page,
+            'current_page': page
+        })
+
+    except Exception as e:
+        print(f"查询项目利润数据失败：{str(e)}")
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e)) 
