@@ -406,6 +406,9 @@ export const Project = () => {
 
 	// 处理价格筛选
 	const handlePriceFilter = async (values) => {
+		const abortController = new AbortController();
+		let isSubscribed = true;
+		
 		const filters = {};
 		
 		// 处理出发地
@@ -432,40 +435,71 @@ export const Project = () => {
 			filters.price_max = values.price_max;
 		}
 		
-		// 先更新筛选条件状态
-		await setPriceFilters(filters);
-		
-		// 重置到第一页
-		await setPricePagination(prev => ({ ...prev, current: 1 }));
-		
-		// 使用最新的筛选条件获取数据
-		if (currentProject) {
-			await fetchPriceList(currentProject, { 
-				current: 1, 
-				pageSize: pricePagination.pageSize,
-				...filters  // 直接使用当前的筛选条件，而不是依赖状态
-			});
+		try {
+			// 先更新筛选条件状态
+			if (isSubscribed) {
+				await setPriceFilters(filters);
+				
+				// 重置到第一页
+				await setPricePagination(prev => ({ ...prev, current: 1 }));
+				
+				// 使用最新的筛选条件获取数据
+				if (currentProject) {
+					await fetchPriceList(currentProject, { 
+						current: 1, 
+						pageSize: pricePagination.pageSize,
+						...filters
+					}, abortController.signal);
+				}
+			}
+		} catch (error) {
+			if (error.name !== 'AbortError' && isSubscribed) {
+				console.error('筛选失败:', error);
+				message.error('筛选失败');
+			}
 		}
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	// 重置价格筛选
 	const handleResetPriceFilter = async () => {
-		// 重置表单
-		priceFilterForm.resetFields();
-		
-		// 清空筛选条件
-		await setPriceFilters({});
-		
-		// 重置到第一页
-		await setPricePagination(prev => ({ ...prev, current: 1 }));
-		
-		// 重新获取数据
-		if (currentProject) {
-			await fetchPriceList(currentProject, { 
-				current: 1, 
-				pageSize: pricePagination.pageSize 
-			});
+		const abortController = new AbortController();
+		let isSubscribed = true;
+
+		try {
+			// 重置表单
+			priceFilterForm.resetFields();
+			
+			if (isSubscribed) {
+				// 清空筛选条件
+				await setPriceFilters({});
+				
+				// 重置到第一页
+				await setPricePagination(prev => ({ ...prev, current: 1 }));
+				
+				// 重新获取数据
+				if (currentProject) {
+					await fetchPriceList(currentProject, { 
+						current: 1, 
+						pageSize: pricePagination.pageSize 
+					}, abortController.signal);
+				}
+			}
+		} catch (error) {
+			if (error.name !== 'AbortError' && isSubscribed) {
+				console.error('重置筛选失败:', error);
+				message.error('重置筛选失败');
+			}
 		}
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	// 获取价格列表
@@ -578,21 +612,27 @@ export const Project = () => {
 			}, {
 				signal: abortSignal
 			});
-			if (response.data.success) {
+			if (response.data.success && Array.isArray(response.data.result)) {
 				setCarrierOptions(response.data.result.map(carrier => ({
 					label: carrier || '-',
 					value: carrier
 				})));
+			} else {
+				setCarrierOptions([]);
 			}
 		} catch (error) {
 			if (error.name !== 'AbortError') {
 				console.error('获取承运人列表失败:', error);
+				setCarrierOptions([]);
 			}
 		}
 	};
 
 	// 处理利润表筛选
 	const handleProfitFilter = async (values) => {
+		const abortController = new AbortController();
+		let isSubscribed = true;
+		
 		const filters = {};
 		
 		// 处理到达地
@@ -608,51 +648,108 @@ export const Project = () => {
 			filters.carriers = values.carriers;
 		}
 		
-		// 更新筛选条件状态
-		await setProfitFilters(filters);
-		
-		// 重置到第一页
-		await setProfitPagination(prev => ({ ...prev, current: 1 }));
-		
-		// 使用最新的筛选条件获取数据
-		if (currentProject) {
-			await fetchProfitList(currentProject, { 
-				current: 1, 
-				pageSize: profitPagination.pageSize,
-				...filters
-			});
+		try {
+			// 更新筛选条件状态
+			if (isSubscribed) {
+				await setProfitFilters(filters);
+				
+				// 重置到第一页
+				await setProfitPagination(prev => ({ ...prev, current: 1 }));
+				
+				// 使用最新的筛选条件获取数据
+				if (currentProject) {
+					await fetchProfitList(currentProject, { 
+						current: 1, 
+						pageSize: profitPagination.pageSize,
+						...filters
+					}, abortController.signal);
+				}
+			}
+		} catch (error) {
+			if (error.name !== 'AbortError' && isSubscribed) {
+				console.error('筛选失败:', error);
+				message.error('筛选失败');
+			}
 		}
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	// 重置利润表筛选
 	const handleResetProfitFilter = async () => {
-		profitFilterForm.resetFields();
-		await setProfitFilters({});
-		await setProfitPagination(prev => ({ ...prev, current: 1 }));
-		if (currentProject) {
-			await fetchProfitList(currentProject, { 
-				current: 1, 
-				pageSize: profitPagination.pageSize 
-			});
+		const abortController = new AbortController();
+		let isSubscribed = true;
+
+		try {
+			profitFilterForm.resetFields();
+			
+			if (isSubscribed) {
+				await setProfitFilters({});
+				await setProfitPagination(prev => ({ ...prev, current: 1 }));
+				
+				if (currentProject) {
+					await fetchProfitList(currentProject, { 
+						current: 1, 
+						pageSize: profitPagination.pageSize 
+					}, abortController.signal);
+				}
+			}
+		} catch (error) {
+			if (error.name !== 'AbortError' && isSubscribed) {
+				console.error('重置筛选失败:', error);
+				message.error('重置筛选失败');
+			}
 		}
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	// 处理汇总字段变化
 	const handleGroupByChange = (checkedValues) => {
 		setGroupByFields(checkedValues);
-		if (currentProject) {
-			fetchProfitList(currentProject, {
-				current: 1,
-				pageSize: profitPagination.pageSize,
-				...profitFilters,
-				group_by: checkedValues
-			});
-		}
 	};
+
+	// 监听 groupByFields 变化
+	useEffect(() => {
+		const abortController = new AbortController();
+		let isSubscribed = true;
+
+		const updateProfitList = async () => {
+			if (currentProject) {
+				try {
+					await fetchProfitList(currentProject, {
+						current: 1,
+						pageSize: profitPagination.pageSize,
+						...profitFilters,
+						group_by: groupByFields
+					}, abortController.signal);
+				} catch (error) {
+					if (error.name !== 'AbortError' && isSubscribed) {
+						console.error('更新汇总数据失败:', error);
+						message.error('更新汇总数据失败');
+					}
+				}
+			}
+		};
+
+		updateProfitList();
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
+	}, [groupByFields, currentProject]);
 
 	// 查看项目详情
 	const handleViewPrice = async (project) => {
 		const abortController = new AbortController();
+		let isSubscribed = true;
 		setCurrentProject(project);
 		setIsPriceModalOpen(true);
 		
@@ -663,16 +760,24 @@ export const Project = () => {
 				fetchCarrierList(abortController.signal)
 			]);
 		} catch (error) {
-			if (error.name !== 'AbortError') {
+			if (error.name !== 'AbortError' && isSubscribed) {
 				console.error('加载数据失败:', error);
 				message.error('加载数据失败');
 			}
 		}
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	// 处理价格表导入
 	const handlePriceImport = (file) => {
 		const reader = new FileReader();
+		const abortController = new AbortController();
+		let isSubscribed = true;
+
 		reader.onload = async (e) => {
 			try {
 				const data = e.target.result;
@@ -718,28 +823,36 @@ export const Project = () => {
 				// 提交数据到后端
 				const response = await axios.post(`${backendUrl}/api/project/price_config/upload`, {
 					upload_list: priceData
+				}, {
+					signal: abortController.signal
 				});
 
-				if (response.data.success) {
+				if (response.data.success && isSubscribed) {
 					message.success(response.data.result.message);
 					// 重新获取价格列表
 					fetchPriceList(currentProject, {
 						current: 1,
 						pageSize: pricePagination.pageSize
-					});
-				} else {
+					}, abortController.signal);
+				} else if (isSubscribed) {
 					Modal.error({
 						title: '导入失败',
 						content: response.data.error_message
 					});
 				}
 			} catch (error) {
-				console.error('Excel 解析错误:', error);
-				message.error('Excel 文件解析失败');
+				if (error.name !== 'AbortError' && isSubscribed) {
+					console.error('Excel 解析错误:', error);
+					message.error('Excel 文件解析失败');
+				}
 			}
 		};
 		reader.readAsBinaryString(file);
-		return false; // 阻止自动上传
+
+		return () => {
+			isSubscribed = false;
+			abortController.abort();
+		};
 	};
 
 	return (

@@ -488,8 +488,8 @@ def get_carrier_list():
             Order.is_deleted == 0
         ).distinct().all()
         
-        # 转换为列表
-        carrier_list = [carrier[0] for carrier in carriers]
+        # 转换为列表，过滤掉 None 值
+        carrier_list = [carrier[0] for carrier in carriers if carrier[0] is not None]
         
         return success_response(carrier_list)
 
