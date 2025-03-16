@@ -943,6 +943,12 @@ export const Project = () => {
 									key: 'destination_city',
 								},
 								{
+									title: '承运类型',
+									dataIndex: 'carrier_type',
+									key: 'carrier_type',
+									render: (type) => type === 1 ? '整车运输' : '零担运输',
+								},
+								{
 									title: '价格（元/吨）',
 									dataIndex: 'unit_price',
 									key: 'unit_price',
