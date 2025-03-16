@@ -532,6 +532,7 @@ def query_project_profit():
         
         # 添加聚合字段
         select_fields.extend([
+            db.func.sum(Order.weight).label('weight'),
             db.func.sum(Order.amount).label('income'),
             db.func.sum(Order.carrier_fee).label('expense'),
             db.func.sum(Order.amount - Order.carrier_fee).label('profit')
@@ -572,6 +573,7 @@ def query_project_profit():
             'province': item.province,
             'city': item.city,
             'carrier': item.carrier or '-',
+            'weight': float(item.weight or 0),
             'income': float(item.income or 0),
             'expense': float(item.expense or 0),
             'profit': float(item.profit or 0)

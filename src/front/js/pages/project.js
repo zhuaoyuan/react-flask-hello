@@ -1369,22 +1369,28 @@ export const Project = () => {
 									key: 'carrier',
 								},
 								{
+									title: '重量（吨）',
+									dataIndex: 'weight',
+									key: 'weight',
+									render: (text) => text.toFixed(2)
+								},
+								{
 									title: '收入',
 									dataIndex: 'income',
 									key: 'income',
-									render: (text) => `¥${text.toFixed(2)}`
+									render: (text, record) => `¥${text.toFixed(2)} (¥${(text / record.weight).toFixed(2)}/吨)`
 								},
 								{
 									title: '支出',
 									dataIndex: 'expense',
 									key: 'expense',
-									render: (text) => `¥${text.toFixed(2)}`
+									render: (text, record) => `¥${text.toFixed(2)} (¥${(text / record.weight).toFixed(2)}/吨)`
 								},
 								{
 									title: '利润',
 									dataIndex: 'profit',
 									key: 'profit',
-									render: (text) => `¥${text.toFixed(2)}`
+									render: (text, record) => `¥${text.toFixed(2)} (¥${(text / record.weight).toFixed(2)}/吨)`
 								}
 							]}
 							loading={profitLoading}
