@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Table, Space, message, Upload, Modal, Card, Typography, Row, Col, Select } from 'antd';
+import { Form, Input, Button, Table, Space, message, Upload, Modal, Card, Typography, Row, Col } from 'antd';
 import axios from 'axios';
 import { responseHandler } from '../component/responseHandler';
 import FileSaver from 'file-saver';
 import * as XLSX from 'xlsx';
 import { UploadOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icons';
-import { provinces_and_cities } from '../data/provinces_and_cities';
 
 const { Title } = Typography;
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
@@ -94,22 +93,16 @@ export const Price = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-    const [selectedProvince, setSelectedProvince] = useState(null);
-    const [selectedCity, setSelectedCity] = useState(null);
-
-    // 获取所有省份列表
-    const provinces = Object.keys(provinces_and_cities);
-
-    // 获取选中省份的城市列表
-    const cities = selectedProvince ? provinces_and_cities[selectedProvince] : [];
+    const [departureProvince, setDepartureProvince] = useState('');
+    const [departureCity, setDepartureCity] = useState('');
 
     const fetchData = async (params = {}) => {
         setLoading(true);
         try {
             const response = await axios.post(`${backendUrl}/api/project_price_config/list`, {
                 project_name: searchQuery,
-                departure_province: selectedProvince,
-                departure_city: selectedCity,
+                departure_province: departureProvince,
+                departure_city: departureCity,
                 page: params.pagination?.current || 1,
                 per_page: params.pagination?.pageSize || 10,
             });
@@ -129,7 +122,7 @@ export const Price = () => {
 
     useEffect(() => {
         fetchData({ pagination });
-    }, [selectedProvince, selectedCity]);
+    }, [departureProvince, departureCity]);
 
     const handleTableChange = (newPagination) => {
         setPagination(newPagination);
@@ -233,35 +226,22 @@ export const Price = () => {
                         </Col>
                         <Col span={6}>
                             <Form.Item label="出发省份" name="departure_province">
-                                <Select
-                                    placeholder="选择出发省份"
-                                    value={selectedProvince}
-                                    onChange={setSelectedProvince}
+                                <Input
+                                    placeholder="请输入出发省份"
+                                    value={departureProvince}
+                                    onChange={(e) => setDepartureProvince(e.target.value)}
                                     allowClear
-                                >
-                                    {provinces.map(province => (
-                                        <Select.Option key={province} value={province}>
-                                            {province}
-                                        </Select.Option>
-                                    ))}
-                                </Select>
+                                />
                             </Form.Item>
                         </Col>
                         <Col span={6}>
                             <Form.Item label="出发城市" name="departure_city">
-                                <Select
-                                    placeholder="选择出发城市"
-                                    value={selectedCity}
-                                    onChange={setSelectedCity}
+                                <Input
+                                    placeholder="请输入出发城市"
+                                    value={departureCity}
+                                    onChange={(e) => setDepartureCity(e.target.value)}
                                     allowClear
-                                    disabled={!selectedProvince}
-                                >
-                                    {cities.map(city => (
-                                        <Select.Option key={city} value={city}>
-                                            {city}
-                                        </Select.Option>
-                                    ))}
-                                </Select>
+                                />
                             </Form.Item>
                         </Col>
                         <Col span={6}>

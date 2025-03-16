@@ -1,24 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Cascader, Modal, Popconfirm, Checkbox } from 'antd';
+import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Modal, Popconfirm, Checkbox } from 'antd';
 import { SearchOutlined, DownloadOutlined, UploadOutlined, SettingOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
-import { provinces_and_cities } from '../data/provinces_and_cities';
 
 const { RangePicker } = DatePicker;
 
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-
-// 将省市数据转换为级联选择器需要的格式
-const cascaderOptions = Object.entries(provinces_and_cities).map(([province, cities]) => ({
-    value: province,
-    label: province,
-    children: cities.map(city => ({
-        value: city,
-        label: city
-    }))
-}));
 
 export const Order = () => {
     const [form] = Form.useForm();
@@ -457,8 +446,10 @@ export const Order = () => {
             product_name: record.product_name,
             quantity: record.quantity,
             weight: record.weight,
-            departure: [record.departure_province, record.departure_city],
-            destination: [record.destination_province, record.destination_city],
+            departure_province: record.departure_province,
+            departure_city: record.departure_city,
+            destination_province: record.destination_province,
+            destination_city: record.destination_city,
             destination_address: record.destination_address,
             remark: record.remark
         });
@@ -469,8 +460,6 @@ export const Order = () => {
     const handleEditSubmit = async () => {
         try {
             const values = await editForm.validateFields();
-            const [departure_province, departure_city] = values.departure;
-            const [destination_province, destination_city] = values.destination;
 
             const response = await axios.post(`${backendUrl}/api/order/edit`, {
                 id: editingOrder.id,
@@ -479,10 +468,10 @@ export const Order = () => {
                 product_name: values.product_name,
                 quantity: parseInt(values.quantity),
                 weight: parseFloat(values.weight),
-                departure_province,
-                departure_city,
-                destination_province,
-                destination_city,
+                departure_province: values.departure_province,
+                departure_city: values.departure_city,
+                destination_province: values.destination_province,
+                destination_city: values.destination_city,
                 destination_address: values.destination_address,
                 remark: values.remark
             });
@@ -729,34 +718,23 @@ export const Order = () => {
                             <Form.Item label="订单号" name="order_number">
                                 <Input placeholder="请输入订单号" style={{ width: '240px' }} />
                             </Form.Item>
-                            <Form.Item label="送达城市" name="destination">
-                                <Cascader
-                                    options={cascaderOptions}
-                                    placeholder="请选择送达城市"
-                                    style={{ width: '240px' }}
-                                    showSearch={{
-                                        filter: (inputValue, path) => {
-                                            return path.some(option => {
-                                                const label = option.label.toLowerCase();
-                                                const input = inputValue.toLowerCase();
-                                                return label.indexOf(input) > -1;
-                                            });
-                                        }
-                                    }}
-                                />
+                            <Form.Item label="送达省" name="destination_province">
+                                <Input placeholder="请输入送达省" style={{ width: '120px' }} />
+                            </Form.Item>
+                            <Form.Item label="送达市" name="destination_city">
+                                <Input placeholder="请输入送达市" style={{ width: '120px' }} />
                             </Form.Item>
                             <Form.Item style={{ marginLeft: 'auto', marginRight: 0 }}>
-                            <Space>
-                                <Button type="primary" onClick={handleSearch}>
-                                    查询
-                                </Button>
-                                <Button onClick={handleReset}>
-                                    重置
-                                </Button>
-                            </Space>
-                        </Form.Item>
+                                <Space>
+                                    <Button type="primary" onClick={handleSearch}>
+                                        查询
+                                    </Button>
+                                    <Button onClick={handleReset}>
+                                        重置
+                                    </Button>
+                                </Space>
+                            </Form.Item>
                         </div>
-                        
                     </div>
                 </Form>
 
@@ -839,19 +817,35 @@ export const Order = () => {
                     </Form.Item>
 
                     <Form.Item
-                        name="departure"
-                        label="出发地"
-                        rules={[{ required: true, message: '请选择出发地' }]}
+                        name="departure_province"
+                        label="出发省"
+                        rules={[{ required: true, message: '请输入出发省' }]}
                     >
-                        <Cascader options={cascaderOptions} />
+                        <Input placeholder="请输入出发省" />
                     </Form.Item>
 
                     <Form.Item
-                        name="destination"
-                        label="送达地"
-                        rules={[{ required: true, message: '请选择送达地' }]}
+                        name="departure_city"
+                        label="出发市"
+                        rules={[{ required: true, message: '请输入出发市' }]}
                     >
-                        <Cascader options={cascaderOptions} />
+                        <Input placeholder="请输入出发市" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="destination_province"
+                        label="送达省"
+                        rules={[{ required: true, message: '请输入送达省' }]}
+                    >
+                        <Input placeholder="请输入送达省" />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="destination_city"
+                        label="送达市"
+                        rules={[{ required: true, message: '请输入送达市' }]}
+                    >
+                        <Input placeholder="请输入送达市" />
                     </Form.Item>
 
                     <Form.Item

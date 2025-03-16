@@ -197,6 +197,12 @@ def import_orders():
         new_orders = []
         errors = []
         for index, order_data in enumerate(data['orders']):
+            # 验证必填字段
+            if not order_data.get('departure_province') or not order_data.get('departure_city') or \
+               not order_data.get('destination_province') or not order_data.get('destination_city'):
+                errors.append(f"第{index + 1}行：出发地和到达地的省市信息不能为空")
+                continue
+
             route_key = f"{order_data['departure_province']}-{order_data['departure_city']}-{order_data['destination_province']}-{order_data['destination_city']}"
             
             if route_key not in price_config_dict:

@@ -1,7 +1,6 @@
 from flask import request, jsonify, Blueprint
 from api.models import db, ProjectInfo, ProjectPriceConfig, Order
 from api.enum.error_code import ErrorCode
-from api.enum.provinces_and_cities import provinces_and_cities
 from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
 from sqlalchemy import or_, text
@@ -42,24 +41,18 @@ def validate_price_config(price_config):
     unique_keys = set()
 
     for index, item in enumerate(price_config):
-        # 验证省市是否存在
-        if item['departure_province'] not in provinces_and_cities:
-            errors.append(f"第 {index + 1} 行：出发省 '{item['departure_province']}' 不存在")
-        elif item['departure_city'] not in provinces_and_cities[item['departure_province']]:
-            errors.append(f"第 {index + 1} 行：出发市 '{item['departure_city']}' 不是 {item['departure_province']} 的城市")
+        # 校验必填字段
+        if not item['departure_province'] or not item['departure_city'] or \
+           not item['destination_province'] or not item['destination_city']:
+            errors.append(f"第 {index + 1} 行：出发地和到达地的省市信息不能为空")
 
-        if item['destination_province'] not in provinces_and_cities:
-            errors.append(f"第 {index + 1} 行：到达省 '{item['destination_province']}' 不存在")
-        elif item['destination_city'] not in provinces_and_cities[item['destination_province']]:
-            errors.append(f"第 {index + 1} 行：到达市 '{item['destination_city']}' 不是 {item['destination_province']} 的城市")
-
-        # 验证唯一性
+        # 校验唯一性
         key = f"{item['departure_province']}-{item['departure_city']}-{item['destination_province']}-{item['destination_city']}"
         if key in unique_keys:
             errors.append(f"第 {index + 1} 行：出发地-到达地组合重复")
         unique_keys.add(key)
 
-        # 验证价格
+        # 校验价格
         if not isinstance(item['price'], (int, float)) or item['price'] <= 0:
             errors.append(f"第 {index + 1} 行：价格必须是大于0的数字")
 
@@ -401,20 +394,10 @@ def upload_project_price_config():
         destination_province = price['destination_province']
         destination_city = price['destination_city']
 
-        if departure_province not in provinces_and_cities:
-            error_messages.append(f"第{sheet_index}行：出发省份 '{departure_province}' 不存在")
-            continue
-
-        if departure_city not in provinces_and_cities[departure_province]:
-            error_messages.append(f"第{sheet_index}行：出发城市 '{departure_city}' 不属于省份 '{departure_province}'")
-            continue
-
-        if destination_province not in provinces_and_cities:
-            error_messages.append(f"第{sheet_index}行：目的省份 '{destination_province}' 不存在")
-            continue
-
-        if destination_city not in provinces_and_cities[destination_province]:
-            error_messages.append(f"第{sheet_index}行：目的城市 '{destination_city}' 不属于省份 '{destination_province}'")
+        # 校验必填字段
+        if not departure_province or not departure_city or \
+           not destination_province or not destination_city:
+            error_messages.append(f"第{sheet_index}行：出发地和到达地的省市信息不能为空")
             continue
 
         # 查找是否存在相同的价格配置
@@ -603,4 +586,30 @@ def query_project_profit():
 
     except Exception as e:
         print(f"查询项目利润数据失败：{str(e)}")
-        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e)) 
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
+
+@project.route('/price_config/delete', methods=['POST'])
+@transactional
+def delete_price_config():
+    """删除价格配置"""
+    data = request.json
+    id = data.get('id')
+    
+    try:
+        # 查找价格配置
+        price_config = ProjectPriceConfig.query.filter_by(
+            id=id,
+            is_deleted=0
+        ).with_for_update().first()
+        
+        if not price_config:
+            return error_response(ErrorCode.BAD_REQUEST, "价格配置不存在")
+        
+        # 逻辑删除
+        price_config.is_deleted = price_config.id
+        db.session.add(price_config)
+        
+        return success_response()
+    except Exception as e:
+        print(f"[事务回滚] 删除价格配置失败：{str(e)}")
+        raise 

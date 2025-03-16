@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, Cascader, InputNumber, Select, Checkbox } from 'antd';
+import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, InputNumber, Select, Checkbox } from 'antd';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
@@ -7,7 +7,6 @@ import { responseHandler } from '../component/responseHandler';
 import { SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { provinces_and_cities } from '../data/provinces_and_cities';
 
 const { TextArea } = Input;
 const { Meta } = Card;
@@ -22,17 +21,9 @@ const validatePriceData = (data) => {
 	const uniqueKeys = new Set();
 
 	data.forEach((item, index) => {
-		// 校验省市是否存在
-		if (!provinces_and_cities[item.departure_province]) {
-			errors.push(`第 ${index + 1} 行：出发省 "${item.departure_province}" 不存在`);
-		} else if (!provinces_and_cities[item.departure_province].includes(item.departure_city)) {
-			errors.push(`第 ${index + 1} 行：出发市 "${item.departure_city}" 不是 ${item.departure_province} 的城市`);
-		}
-
-		if (!provinces_and_cities[item.destination_province]) {
-			errors.push(`第 ${index + 1} 行：到达省 "${item.destination_province}" 不存在`);
-		} else if (!provinces_and_cities[item.destination_province].includes(item.destination_city)) {
-			errors.push(`第 ${index + 1} 行：到达市 "${item.destination_city}" 不是 ${item.destination_province} 的城市`);
+		// 校验必填字段
+		if (!item.departure_province || !item.departure_city || !item.destination_province || !item.destination_city) {
+			errors.push(`第 ${index + 1} 行：出发地和到达地的省市信息不能为空`);
 		}
 
 		// 校验唯一性
@@ -392,48 +383,19 @@ export const Project = () => {
 		XLSX.writeFile(wb, '价格配置导入模板.xlsx');
 	};
 
-	// 将省市数据转换为级联选择器需要的格式
-	const getCascaderOptions = () => {
-		return Object.entries(provinces_and_cities).map(([province, cities]) => ({
-			value: province,
-			label: province,
-			children: cities.map(city => ({
-				value: city,
-				label: city,
-			}))
-		}));
-	};
-
 	// 处理价格筛选
 	const handlePriceFilter = async (values) => {
 		const abortController = new AbortController();
 		let isSubscribed = true;
 		
-		const filters = {};
-		
-		// 处理出发地
-		if (values.departure?.length) {
-			filters.departure_province = values.departure[0];
-			if (values.departure.length > 1) {
-				filters.departure_city = values.departure[1];
-			}
-		}
-		
-		// 处理到达地
-		if (values.destination?.length) {
-			filters.destination_province = values.destination[0];
-			if (values.destination.length > 1) {
-				filters.destination_city = values.destination[1];
-			}
-		}
-		
-		// 处理价格范围
-		if (values.price_min !== undefined) {
-			filters.price_min = values.price_min;
-		}
-		if (values.price_max !== undefined) {
-			filters.price_max = values.price_max;
-		}
+		const filters = {
+			departure_province: values.departure_province || undefined,
+			departure_city: values.departure_city || undefined,
+			destination_province: values.destination_province || undefined,
+			destination_city: values.destination_city || undefined,
+			price_min: values.price_min,
+			price_max: values.price_max
+		};
 		
 		try {
 			// 先更新筛选条件状态
@@ -666,20 +628,11 @@ export const Project = () => {
 		const abortController = new AbortController();
 		let isSubscribed = true;
 		
-		const filters = {};
-		
-		// 处理到达地
-		if (values.destination?.length) {
-			filters.destination_province = values.destination[0];
-			if (values.destination.length > 1) {
-				filters.destination_city = values.destination[1];
-			}
-		}
-		
-		// 处理承运人
-		if (values.carriers?.length) {
-			filters.carriers = values.carriers;
-		}
+		const filters = {
+			destination_province: values.destination_province || undefined,
+			destination_city: values.destination_city || undefined,
+			carriers: values.carriers?.length ? values.carriers : undefined
+		};
 		
 		try {
 			// 更新筛选条件状态
@@ -1223,25 +1176,19 @@ export const Project = () => {
 						>
 							<Row gutter={[16, 16]} align="middle" justify="space-between">
 								<Col span={5}>
-									<Form.Item name="departure" label="出发地" style={{ marginBottom: 0 }}>
-										<Cascader
-											options={getCascaderOptions()}
-											placeholder="请选择出发地"
-											showSearch
-											changeOnSelect
-											style={{ width: '100%' }}
-										/>
+									<Form.Item name="departure_province" label="出发省" style={{ marginBottom: 0 }}>
+										<Input placeholder="请输入出发省" />
+									</Form.Item>
+									<Form.Item name="departure_city" label="出发市" style={{ marginBottom: 0 }}>
+										<Input placeholder="请输入出发市" />
 									</Form.Item>
 								</Col>
 								<Col span={5}>
-									<Form.Item name="destination" label="到达地" style={{ marginBottom: 0 }}>
-										<Cascader
-											options={getCascaderOptions()}
-											placeholder="请选择到达地"
-											showSearch
-											changeOnSelect
-											style={{ width: '100%' }}
-										/>
+									<Form.Item name="destination_province" label="到达省" style={{ marginBottom: 0 }}>
+										<Input placeholder="请输入到达省" />
+									</Form.Item>
+									<Form.Item name="destination_city" label="到达市" style={{ marginBottom: 0 }}>
+										<Input placeholder="请输入到达市" />
 									</Form.Item>
 								</Col>
 								<Col span={8}>
@@ -1369,16 +1316,11 @@ export const Project = () => {
 							>
 								<Row gutter={[16, 16]} align="middle" justify="space-between">
 									<Col span={8}>
-										<Form.Item name="destination" label="到达地" style={{ marginBottom: 0 }}>
-											<Cascader
-												options={getCascaderOptions()}
-												placeholder="请选择到达地"
-												showSearch
-												multiple
-												maxTagCount={2}
-												changeOnSelect
-												style={{ width: '100%' }}
-											/>
+										<Form.Item name="destination_province" label="到达省" style={{ marginBottom: 0 }}>
+											<Input placeholder="请输入到达省" />
+										</Form.Item>
+										<Form.Item name="destination_city" label="到达市" style={{ marginBottom: 0 }}>
+											<Input placeholder="请输入到达市" />
 										</Form.Item>
 									</Col>
 									<Col span={8}>
