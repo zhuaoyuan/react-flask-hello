@@ -60,6 +60,7 @@ export const Project = () => {
 	const [loading, setLoading] = useState(false);
 	const [pagination, setPagination] = useState({ current: 1, pageSize: 9, total: 0 });
 	const [confirmDelete, setConfirmDelete] = useState({ open: false, id: null });
+	const [confirmPriceDelete, setConfirmPriceDelete] = useState({ open: false, id: null });
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [editData, setEditData] = useState(null);
@@ -78,6 +79,35 @@ export const Project = () => {
 	const [profitFilters, setProfitFilters] = useState({});
 	const [groupByFields, setGroupByFields] = useState(['province', 'city', 'carrier']);
 	const [carrierOptions, setCarrierOptions] = useState([]);
+
+	// 处理价格配置删除
+	const handlePriceDelete = (id) => {
+		setConfirmPriceDelete({ open: true, id });
+	};
+
+	const handlePriceDeleteConfirm = async () => {
+		try {
+			const response = await axios.post(`${backendUrl}/api/project/price_config/delete`, { 
+				id: confirmPriceDelete.id 
+			});
+			
+			if (response.data.success) {
+				message.success('删除成功');
+				// 重新获取价格列表
+				fetchPriceList(currentProject, {
+					current: 1,
+					pageSize: pricePagination.pageSize
+				});
+			} else {
+				message.error(response.data.error_message || '删除失败');
+			}
+		} catch (error) {
+			console.error('删除价格配置失败:', error);
+			message.error('删除失败');
+		} finally {
+			setConfirmPriceDelete({ open: false, id: null });
+		}
+	};
 
 	const fetchData = async (params = {}) => {
 		setLoading(true);
@@ -101,6 +131,7 @@ export const Project = () => {
 	};
 
 	useEffect(() => {
+		const abortController = new AbortController();
 		let isSubscribed = true;
 
 		const fetchDataSafely = async () => {
@@ -110,6 +141,8 @@ export const Project = () => {
 					search_query: searchQuery,
 					page: pagination.current || 1,
 					per_page: pagination.pageSize || 9,
+				}, {
+					signal: abortController.signal
 				});
 				if (isSubscribed) {
 					setData(response.data.data);
@@ -119,6 +152,9 @@ export const Project = () => {
 					}));
 				}
 			} catch (error) {
+				if (error.name === 'AbortError') {
+					return;
+				}
 				if (isSubscribed) {
 					console.log(error);
 					message.error('获取数据失败');
@@ -134,6 +170,7 @@ export const Project = () => {
 
 		return () => {
 			isSubscribed = false;
+			abortController.abort();
 		};
 	}, [searchQuery, pagination.current, pagination.pageSize]);
 
@@ -432,7 +469,7 @@ export const Project = () => {
 	};
 
 	// 获取价格列表
-	const fetchPriceList = async (project, params = {}) => {
+	const fetchPriceList = async (project, params = {}, abortSignal) => {
 		setPriceLoading(true);
 		try {
 			const response = await axios.post(`${backendUrl}/api/project/price_config/list`, {
@@ -445,6 +482,8 @@ export const Project = () => {
 				destination_city: params.destination_city,
 				price_min: params.price_min,
 				price_max: params.price_max
+			}, {
+				signal: abortSignal
 			});
 			
 			if (response.data.success) {
@@ -458,6 +497,9 @@ export const Project = () => {
 				message.error('获取价格配置失败');
 			}
 		} catch (error) {
+			if (error.name === 'AbortError') {
+				return;
+			}
 			console.error(error);
 			message.error('获取价格配置失败');
 		} finally {
@@ -466,7 +508,7 @@ export const Project = () => {
 	};
 
 	// 获取利润列表
-	const fetchProfitList = async (project, params = {}) => {
+	const fetchProfitList = async (project, params = {}, abortSignal) => {
 		setProfitLoading(true);
 		try {
 			const response = await axios.post(`${backendUrl}/api/project/profit/list`, {
@@ -477,6 +519,8 @@ export const Project = () => {
 				destination_city: params.destination_city,
 				carriers: params.carriers,
 				group_by: params.group_by || groupByFields
+			}, {
+				signal: abortSignal
 			});
 			
 			if (response.data.success) {
@@ -490,6 +534,9 @@ export const Project = () => {
 				message.error('获取利润数据失败');
 			}
 		} catch (error) {
+			if (error.name === 'AbortError') {
+				return;
+			}
 			console.error(error);
 			message.error('获取利润数据失败');
 		} finally {
@@ -524,10 +571,12 @@ export const Project = () => {
 	};
 
 	// 获取承运人列表
-	const fetchCarrierList = async () => {
+	const fetchCarrierList = async (abortSignal) => {
 		try {
 			const response = await axios.post(`${backendUrl}/api/project/carrier/list`, {
 				project_name: currentProject?.project_name
+			}, {
+				signal: abortSignal
 			});
 			if (response.data.success) {
 				setCarrierOptions(response.data.result.map(carrier => ({
@@ -536,7 +585,9 @@ export const Project = () => {
 				})));
 			}
 		} catch (error) {
-			console.error('获取承运人列表失败:', error);
+			if (error.name !== 'AbortError') {
+				console.error('获取承运人列表失败:', error);
+			}
 		}
 	};
 
@@ -601,13 +652,22 @@ export const Project = () => {
 
 	// 查看项目详情
 	const handleViewPrice = async (project) => {
+		const abortController = new AbortController();
 		setCurrentProject(project);
 		setIsPriceModalOpen(true);
-		await Promise.all([
-			fetchPriceList(project, { current: 1, pageSize: 10 }),
-			fetchProfitList(project, { current: 1, pageSize: 10 }),
-			fetchCarrierList()
-		]);
+		
+		try {
+			await Promise.all([
+				fetchPriceList(project, { current: 1, pageSize: 10 }, abortController.signal),
+				fetchProfitList(project, { current: 1, pageSize: 10 }, abortController.signal),
+				fetchCarrierList(abortController.signal)
+			]);
+		} catch (error) {
+			if (error.name !== 'AbortError') {
+				console.error('加载数据失败:', error);
+				message.error('加载数据失败');
+			}
+		}
 	};
 
 	// 处理价格表导入
@@ -1091,6 +1151,19 @@ export const Project = () => {
 									dataIndex: 'unit_price',
 									key: 'unit_price',
 								},
+								{
+									title: '操作',
+									key: 'action',
+									render: (_, record) => (
+										<Button 
+											type="link" 
+											danger
+											onClick={() => handlePriceDelete(record.id)}
+										>
+											删除
+										</Button>
+									),
+								}
 							]}
 							loading={priceLoading}
 							pagination={{
@@ -1228,6 +1301,18 @@ export const Project = () => {
 						/>
 					</Tabs.TabPane>
 				</Tabs>
+			</Modal>
+
+			<Modal
+				title="确认删除"
+				open={confirmPriceDelete.open}
+				onOk={handlePriceDeleteConfirm}
+				onCancel={() => setConfirmPriceDelete({ open: false, id: null })}
+				okText="确认"
+				cancelText="取消"
+				okButtonProps={{ danger: true }}
+			>
+				<p>确定要删除这条价格配置吗？此操作不可恢复。</p>
 			</Modal>
 		</div>
 	);
