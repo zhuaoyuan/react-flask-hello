@@ -14,7 +14,6 @@ import {
 import { Home } from "./pages/home";
 import { Demo } from "./pages/demo";
 import { Project } from "./pages/project";
-import { Price } from "./pages/price";
 import { Single } from "./pages/single";
 import { Order } from "./pages/order";
 import injectContext from "./store/appContext";
@@ -172,11 +171,6 @@ const MainLayout = () => {
                         <Route path="/project" element={
                             <PrivateRoute>
                                 <Project />
-                            </PrivateRoute>
-                        } />
-                        <Route path="/price" element={
-                            <PrivateRoute>
-                                <Price />
                             </PrivateRoute>
                         } />
                         <Route path="/order" element={
