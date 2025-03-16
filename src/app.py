@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
+from flask_session import Session
 from api.utils import generate_sitemap
 from api.models import db
 from api.routes import api, init_routes
@@ -35,28 +36,39 @@ app.url_map.strict_slashes = False
 
 # 数据库配置
 # Database configuration
-db_url = os.getenv("DATABASE_URL")
-if db_url is not None:
-    # 处理PostgreSQL数据库URL格式
-    # Handle PostgreSQL database URL format
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace(
-        "postgres://", "postgresql://")
-else:
-    # 默认使用SQLite数据库
-    # Use SQLite database by default
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///test.db"
-
-# 禁用SQLAlchemy的修改跟踪
-# Disable SQLAlchemy modification tracking
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql://root:123456@localhost/logistics')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 初始化数据库迁移
-# Initialize database migration
-MIGRATE = Migrate(app, db)
-db.init_app(app)
+# Session配置
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = True  # 启用永久 session
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # session有效期24小时
+app.config['SESSION_COOKIE_NAME'] = 'session'  # cookie 名称
+app.config['SESSION_COOKIE_SECURE'] = False  # 开发环境不要求 HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # 防止 XSS 攻击
+app.config['SESSION_COOKIE_DOMAIN'] = None  # 允许所有域名
+app.config['SESSION_COOKIE_PATH'] = '/'  # Cookie 路径
 
-# 允许CORS
-CORS(app)
+# 配置跨域
+CORS(app, 
+     supports_credentials=True,
+     resources={
+         r"/api/*": {
+             "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+             "expose_headers": ["Content-Type", "Authorization", "Set-Cookie"],
+             "supports_credentials": True,
+             "send_wildcard": False,
+             "max_age": 86400
+         }
+     })
+
+# 初始化各种扩展
+Session(app)  # 初始化Session
+db.init_app(app)  # 初始化数据库
+MIGRATE = Migrate(app, db)  # 初始化数据库迁移
 
 # 设置管理界面
 # Setup admin interface

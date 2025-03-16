@@ -18,6 +18,8 @@ import { Price } from "./pages/price";
 import { Single } from "./pages/single";
 import { Order } from "./pages/order";
 import injectContext from "./store/appContext";
+import { Login } from "./pages/login";
+import { PrivateRoute } from "./component/PrivateRoute";
 
 import { Footer } from "./component/footer";
 
@@ -156,12 +158,37 @@ const MainLayout = () => {
                     marginTop: 64 // Header的高度
                 }}>
                     <Routes>
-                        <Route element={<Home />} path="/" />
-                        <Route element={<Demo />} path="/demo" />
-                        <Route element={<Project />} path="/project" />
-                        <Route element={<Price />} path="/price" />
-                        <Route element={<Order />} path="/order" />
-                        <Route element={<Single />} path="/single/:theid" />
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/" element={
+                            <PrivateRoute>
+                                <Home />
+                            </PrivateRoute>
+                        } />
+                        <Route path="/demo" element={
+                            <PrivateRoute>
+                                <Demo />
+                            </PrivateRoute>
+                        } />
+                        <Route path="/project" element={
+                            <PrivateRoute>
+                                <Project />
+                            </PrivateRoute>
+                        } />
+                        <Route path="/price" element={
+                            <PrivateRoute>
+                                <Price />
+                            </PrivateRoute>
+                        } />
+                        <Route path="/order" element={
+                            <PrivateRoute>
+                                <Order />
+                            </PrivateRoute>
+                        } />
+                        <Route path="/single/:theid" element={
+                            <PrivateRoute>
+                                <Single />
+                            </PrivateRoute>
+                        } />
                         <Route element={<h1>Not found!</h1>} />
                     </Routes>
                 </Content>

@@ -5,6 +5,7 @@ from api.utils import success_response, error_response, register_error_handlers
 from datetime import datetime
 from sqlalchemy import or_, text
 from functools import wraps
+from api.routes.auth import login_required
 
 def transactional(f):
     @wraps(f)
@@ -59,6 +60,7 @@ def validate_price_config(price_config):
     return len(errors) == 0, errors
 
 @project.route('/list', methods=['POST'])
+@login_required
 def get_projects():
     """获取项目列表，支持分页和搜索"""
     data = request.get_json()
@@ -97,6 +99,7 @@ def get_projects():
     })
 
 @project.route('/upload', methods=['POST'])
+@login_required
 @transactional
 def bulk_add_projects():
     """批量添加项目"""
@@ -146,6 +149,7 @@ def bulk_add_projects():
         return error_response(ErrorCode.PROJECTS_ALL_EXISTED)
 
 @project.route('/edit', methods=['POST'])
+@login_required
 @transactional
 def edit_project():
     """编辑项目信息"""
@@ -164,6 +168,7 @@ def edit_project():
     return success_response(project.to_dict())
 
 @project.route('/delete', methods=['POST'])
+@login_required
 @transactional
 def delete_project():
     """删除项目"""
@@ -240,6 +245,7 @@ def delete_project():
         raise
 
 @project.route('/create', methods=['POST'])
+@login_required
 @transactional
 def create_project():
     """创建新项目及其价格配置"""
@@ -299,6 +305,7 @@ def create_project():
         raise
 
 @project.route('/price_config/list', methods=['POST'])
+@login_required
 def query_project_price_config():
     """查询项目价格配置"""
     data = request.get_json()
@@ -365,6 +372,7 @@ def query_project_price_config():
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @project.route('/price_config/upload', methods=['POST'])
+@login_required
 @transactional
 def upload_project_price_config():
     """批量上传项目价格配置"""
@@ -449,6 +457,7 @@ def upload_project_price_config():
         raise
 
 @project.route('/carrier/list', methods=['POST'])
+@login_required
 def get_carrier_list():
     """获取项目下的承运人列表"""
     data = request.get_json()
@@ -490,6 +499,7 @@ def get_carrier_list():
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @project.route('/profit/list', methods=['POST'])
+@login_required
 def query_project_profit():
     """查询项目利润数据"""
     data = request.get_json()
@@ -591,6 +601,7 @@ def query_project_profit():
         return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e))
 
 @project.route('/price_config/delete', methods=['POST'])
+@login_required
 @transactional
 def delete_price_config():
     """删除价格配置"""

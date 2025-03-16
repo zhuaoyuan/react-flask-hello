@@ -12,23 +12,22 @@ class User(db.Model):
     用户模型
     用于存储用户账号信息
     """
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(80), unique=False, nullable=False)
+    __tablename__ = 'user'
+    
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True, comment='自增主键')
+    username = db.Column(db.String(50), nullable=False, unique=True, comment='用户名')
+    password = db.Column(db.String(100), nullable=False, comment='密码')
+    name = db.Column(db.String(50), nullable=False, comment='姓名')
+    is_deleted = db.Column(db.BigInteger, nullable=False, default=0, comment='删除标记，0-未删除，>0-已删除(记录ID)')
 
     def __repr__(self):
-        """返回用户对象的字符串表示"""
-        return f'<User {self.email}>'
+        return f'<User {self.username}>'
 
-    def serialize(self):
-        """
-        序列化用户数据（不包含敏感信息）
-        :return: 用户数据字典
-        """
+    def to_dict(self):
         return {
-            "id": self.id,
-            "email": self.email,
-            # 出于安全考虑，不序列化密码
+            'id': self.id,
+            'username': self.username,
+            'name': self.name
         }
 
 class ProjectInfo(db.Model):

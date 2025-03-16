@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Space, message, DatePicker, Table, Upload, Select, Card, Modal, Popconfirm, Checkbox } from 'antd';
 import { SearchOutlined, DownloadOutlined, UploadOutlined, SettingOutlined } from '@ant-design/icons';
-import axios from 'axios';
+import axios from '../utils/axios';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
-
-const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
 export const Order = () => {
     const [form] = Form.useForm();
@@ -29,7 +27,7 @@ export const Order = () => {
     const fetchProjects = async () => {
         setProjectLoading(true);
         try {
-            const response = await axios.post(`${backendUrl}/api/project/list`, {
+            const response = await axios.post('/api/project/list', {
                 search_query: '',
                 page: 1,
                 per_page: 100
@@ -71,7 +69,7 @@ export const Order = () => {
             const orderDate = form.getFieldValue('order_date');
             const destination = form.getFieldValue('destination');
             
-            const response = await axios.post(`${backendUrl}/api/order/list`, {
+            const response = await axios.post('/api/order/list', {
                 page: params.current || pagination.current,
                 per_page: params.pageSize || pagination.pageSize,
                 project_name: form.getFieldValue('project_name'),
@@ -151,7 +149,7 @@ export const Order = () => {
             const orderDate = form.getFieldValue('order_date');
             const destination = form.getFieldValue('destination');
             
-            const response = await axios.post(`${backendUrl}/api/order/export`, {
+            const response = await axios.post('/api/order/export', {
                 project_name: form.getFieldValue('project_name'),
                 order_number: form.getFieldValue('order_number'),
                 order_date_start: orderDate?.[0]?.format('YYYY-MM-DD'),
@@ -341,7 +339,7 @@ export const Order = () => {
                     return;
                 }
 
-                const response = await axios.post(`${backendUrl}/api/order/import`, {
+                const response = await axios.post('/api/order/import', {
                     orders: orders,
                     project_id: selectedProject.value,
                     project_name: selectedProject.project_name
@@ -418,7 +416,7 @@ export const Order = () => {
                 }
 
                 // 提交数据到后端
-                const response = await axios.post(`${backendUrl}/api/order/import_delivery`, {
+                const response = await axios.post('/api/order/import_delivery', {
                     deliveries: deliveries
                 });
 
@@ -461,7 +459,7 @@ export const Order = () => {
         try {
             const values = await editForm.validateFields();
 
-            const response = await axios.post(`${backendUrl}/api/order/edit`, {
+            const response = await axios.post('/api/order/edit', {
                 id: editingOrder.id,
                 order_number: values.order_number,
                 order_date: values.order_date.format('YYYY-MM-DD'),
@@ -492,7 +490,7 @@ export const Order = () => {
     // 处理删除
     const handleDelete = async (id) => {
         try {
-            const response = await axios.post(`${backendUrl}/api/order/delete`, { id });
+            const response = await axios.post('/api/order/delete', { id });
             if (response.data.success) {
                 message.success('删除成功');
                 fetchOrders();

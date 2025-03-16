@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Space, message, Modal, DatePicker, Card, Typography, Row, Col, Pagination, Table, Upload, Tabs, InputNumber, Select, Checkbox } from 'antd';
-import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Context } from "../store/appContext";
 import { responseHandler } from '../component/responseHandler';
 import { SearchOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
+import axios from '../utils/axios';  // 使用自定义的 axios 实例
 
 const { TextArea } = Input;
 const { Meta } = Card;
-
-const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
 const TRANSPORT_TYPES = ['整车运输', '零担运输'];
 
@@ -78,7 +76,7 @@ export const Project = () => {
 
 	const handlePriceDeleteConfirm = async () => {
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/price_config/delete`, { 
+			const response = await axios.post('/api/project/price_config/delete', { 
 				id: confirmPriceDelete.id 
 			});
 			
@@ -103,7 +101,7 @@ export const Project = () => {
 	const fetchData = async (params = {}) => {
 		setLoading(true);
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/list`, {
+			const response = await axios.post('/api/project/list', {
 				search_query: searchQuery,
 				page: params.current || 1,
 				per_page: params.pageSize || 9,
@@ -128,7 +126,7 @@ export const Project = () => {
 		const fetchDataSafely = async () => {
 			setLoading(true);
 			try {
-				const response = await axios.post(`${backendUrl}/api/project/list`, {
+				const response = await axios.post('/api/project/list', {
 					search_query: searchQuery,
 					page: pagination.current || 1,
 					per_page: pagination.pageSize || 9,
@@ -182,7 +180,7 @@ export const Project = () => {
 	};
 
 	const handleDeleteConfirm = () => {
-		axios.post(`${backendUrl}/api/project/delete`, { id: confirmDelete.id })
+		axios.post('/api/project/delete', { id: confirmDelete.id })
 			.then(response => {
 				responseHandler(response.data, () => {
 					message.success('删除成功');
@@ -219,7 +217,7 @@ export const Project = () => {
 
 	const handleEditSubmit = async (values) => {
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/edit`, {
+			const response = await axios.post('/api/project/edit', {
 				...editData,
 				...values,
 				start_date: values.start_date.format('YYYY-MM-DD'),
@@ -323,7 +321,7 @@ export const Project = () => {
 		}
 
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/create`, {
+			const response = await axios.post('/api/project/create', {
 				...values,
 				start_date: values.start_date.format('YYYY-MM-DD'),
 				end_date: values.end_date.format('YYYY-MM-DD'),
@@ -468,7 +466,7 @@ export const Project = () => {
 	const fetchPriceList = async (project, params = {}, abortSignal) => {
 		setPriceLoading(true);
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/price_config/list`, {
+			const response = await axios.post('/api/project/price_config/list', {
 				project_name: project.project_name,
 				page: params.current || 1,
 				per_page: params.pageSize || 10,
@@ -507,7 +505,7 @@ export const Project = () => {
 	const fetchProfitList = async (project, params = {}, abortSignal) => {
 		setProfitLoading(true);
 		try {
-			const response = await axios.post(`${backendUrl}/api/project/profit/list`, {
+			const response = await axios.post('/api/project/profit/list', {
 				project_name: project.project_name,
 				page: params.current || 1,
 				per_page: params.pageSize || 10,
@@ -577,7 +575,7 @@ export const Project = () => {
 		try {
 			console.log('开始获取承运人列表:', currentProject.project_name);
 			
-			const response = await axios.post(`${backendUrl}/api/project/carrier/list`, {
+			const response = await axios.post('/api/project/carrier/list', {
 				project_name: currentProject.project_name
 			}, {
 				signal: abortSignal
@@ -811,7 +809,7 @@ export const Project = () => {
 				}
 
 				// 提交数据到后端
-				const response = await axios.post(`${backendUrl}/api/project/price_config/upload`, {
+				const response = await axios.post('/api/project/price_config/upload', {
 					upload_list: priceData
 				}, {
 					signal: abortController.signal
@@ -846,7 +844,7 @@ export const Project = () => {
 	};
 
 	return (
-		<div style={{ padding: '24px' }}>
+		<div>
 			<Card>
 			<Form
 				form={queryForm}
@@ -891,51 +889,60 @@ export const Project = () => {
 			</Form>
 
 				<Row gutter={[16, 16]}>
-					{data.map(project => (
-						<Col span={8} key={project.id}>
-							<Card
-				loading={loading}
-								actions={[
-									<Button 
-										type="link" 
-										icon={<EditOutlined />}
-										onClick={() => handleEdit(project.id)}
-										key="edit"
-									>
-										编辑
-									</Button>,
-									<Button 
-										type="link" 
-										icon={<DeleteOutlined />}
-										onClick={() => handleDelete(project.id)}
-										key="delete"
-										danger
-									>
-										删除
-									</Button>,
-									<Button 
-										type="link" 
-										icon={<EyeOutlined />}
-										onClick={() => handleViewPrice(project)}
-										key="view"
-									>
-										查看详情
-									</Button>
-								]}
-							>
-								<Meta
-									title={project.project_name}
-									description={
-										<div>
-											<p><strong>客户名称：</strong>{project.customer_name}</p>
-											<p><strong>合作时间：</strong>{project.start_date} 至 {project.end_date}</p>
-											<p><strong>项目描述：</strong>{project.project_description}</p>
-										</div>
-									}
-								/>
-							</Card>
-						</Col>
-					))}
+					{loading ? (
+						<div style={{ width: '100%', textAlign: 'center', padding: '20px' }}>
+							加载中...
+						</div>
+					) : data && data.length > 0 ? (
+						data.map(project => (
+							<Col span={8} key={project.id}>
+								<Card
+									actions={[
+										<Button 
+											type="link" 
+											icon={<EditOutlined />}
+											onClick={() => handleEdit(project.id)}
+											key="edit"
+										>
+											编辑
+										</Button>,
+										<Button 
+											type="link" 
+											icon={<DeleteOutlined />}
+											onClick={() => handleDelete(project.id)}
+											key="delete"
+											danger
+										>
+											删除
+										</Button>,
+										<Button 
+											type="link" 
+											icon={<EyeOutlined />}
+											onClick={() => handleViewPrice(project)}
+											key="view"
+										>
+											查看详情
+										</Button>
+									]}
+								>
+									<Meta
+										title={project.project_name}
+										description={
+											<div>
+												<p><strong>客户名称：</strong>{project.customer_name}</p>
+												<p><strong>合作时间：</strong>{project.start_date} 至 {project.end_date}</p>
+												<p><strong>项目描述：</strong>{project.project_description}</p>
+											</div>
+										}
+									/>
+								</Card>
+							</Col>
+						))
+					) : (
+						<div style={{ width: '100%', textAlign: 'center', padding: '20px' }}>
+							暂无数据
+						</div>
+					)}
 				</Row>
 
 				<div style={{ marginTop: '24px', textAlign: 'right' }}>
