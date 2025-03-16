@@ -324,6 +324,56 @@ def edit_order():
         if not order:
             return error_response(ErrorCode.BAD_REQUEST, '订单不存在')
 
+        # 检查重量是否发生变化
+        new_weight = data.get('weight')
+        weight_changed = new_weight is not None and float(new_weight) != float(order.weight)
+        
+        # 如果重量变化，获取并重置相关送货信息
+        if weight_changed:
+            print(f"[事务处理] 订单重量发生变化，原重量：{order.weight}，新重量：{new_weight}")
+            
+            # 查找该子订单所在的status=0的批次记录
+            existing_record = DeliveryImportRecord.query.filter_by(
+                sub_order_number=order.sub_order_number,
+                status=0
+            ).with_for_update().first()
+            
+            if existing_record:
+                print(f"[事务处理] 发现关联的送货记录，批次号：{existing_record.batch_number}")
+                
+                # 获取同一批次下的所有子订单记录
+                all_suborders_of_batch = DeliveryImportRecord.query.filter_by(
+                    batch_number=existing_record.batch_number,
+                    status=0
+                ).with_for_update().all()
+                
+                # 收集所有需要重置送货信息的子订单号
+                sub_order_numbers_to_reset = {
+                    suborder.sub_order_number for suborder in all_suborders_of_batch
+                }
+                
+                # 更新该批次所有记录的状态
+                DeliveryImportRecord.query.filter_by(
+                    batch_number=existing_record.batch_number,
+                    status=0
+                ).update({
+                    'status': existing_record.id
+                }, synchronize_session=False)
+                
+                # 重置所有相关子订单的送货信息
+                if sub_order_numbers_to_reset:
+                    print(f"[事务处理] 重置{len(sub_order_numbers_to_reset)}个关联订单的送货信息")
+                    Order.query.filter(
+                        Order.sub_order_number.in_(sub_order_numbers_to_reset),
+                        Order.is_deleted == 0
+                    ).update({
+                        'carrier_type': None,
+                        'carrier_name': None,
+                        'carrier_phone': None,
+                        'carrier_plate': None,
+                        'carrier_fee': None
+                    }, synchronize_session=False)
+
         price_configs = ProjectPriceConfig.query.filter_by(project_id=order.project_id, is_deleted=0).all()
         if not price_configs:
             return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
@@ -446,7 +496,7 @@ def import_delivery():
             
             # 收集订单信息和验证子订单号
             orders_info = []
-            total_amount = 0
+            total_weight = 0  # 修改为总重量
             for sub_order_number in delivery['sub_order_numbers']:
                 # 检查订单是否存在，并添加行锁
                 order = Order.query.filter_by(sub_order_number=sub_order_number, is_deleted=0).with_for_update().first()
@@ -469,12 +519,17 @@ def import_delivery():
                     for suborder in all_suborders_of_batch:
                         sub_order_numbers_to_reset.add(suborder.sub_order_number)
 
-                # 收集订单金额信息
+                # 检查订单重量
+                if not order.weight or order.weight <= 0:
+                    errors.append(f'子订单号 {sub_order_number} 的重量无效')
+                    continue
+
+                # 收集订单重量信息
                 orders_info.append({
                     'order': order,
-                    'amount': float(order.amount)
+                    'weight': float(order.weight)  # 使用重量而不是金额
                 })
-                total_amount += float(order.amount)
+                total_weight += float(order.weight)
             
             if orders_info:  # 只有在有有效订单时才保存处理结果
                 # 生成批次号（使用毫秒时间戳）
@@ -484,7 +539,7 @@ def import_delivery():
                 delivery_data[id(delivery)] = {
                     'carrier_info': delivery,
                     'orders_info': orders_info,
-                    'total_amount': total_amount,
+                    'total_weight': total_weight,  # 保存总重量
                     'batch_number': new_batch_number
                 }
 
@@ -524,17 +579,17 @@ def import_delivery():
         
         for delivery_info in delivery_data.values():
             delivery = delivery_info['carrier_info']
-            total_amount = delivery_info['total_amount']
+            total_weight = delivery_info['total_weight']  # 使用总重量
             carrier_fee = float(delivery['carrier_fee'])
             new_batch_number = delivery_info['batch_number']
             batch_numbers.append(new_batch_number)
 
             for order_info in delivery_info['orders_info']:
                 order = order_info['order']
-                order_amount = order_info['amount']
+                order_weight = order_info['weight']  # 使用订单重量
                 
-                # 计算该订单应分摊的运费
-                order_carrier_fee = round(order_amount / total_amount * carrier_fee, 2)
+                # 计算该订单应分摊的运费（按重量比例分摊）
+                order_carrier_fee = round(order_weight / total_weight * carrier_fee, 2)
                 
                 # 更新订单信息
                 order.carrier_type = delivery['carrier_type']
