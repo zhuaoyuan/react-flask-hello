@@ -904,7 +904,7 @@ export const Project = () => {
 					{data.map(project => (
 						<Col span={8} key={project.id}>
 							<Card
-								loading={loading}
+				loading={loading}
 								actions={[
 									<Button 
 										type="link" 
