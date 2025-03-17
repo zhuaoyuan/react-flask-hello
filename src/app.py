@@ -3,6 +3,7 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 此模块负责启动API服务器、加载数据库和添加端点
 """
 import os
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
@@ -13,6 +14,36 @@ from api.models import db
 from api.routes import api, init_routes
 from api.admin import setup_admin
 from api.commands import setup_commands
+import logging
+from logging.handlers import RotatingFileHandler
+
+load_dotenv()
+
+# 在 app.py 中添加
+def setup_logger(app):
+    # 创建日志目录
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    
+    # 配置日志处理器
+    file_handler = RotatingFileHandler(
+        'logs/app.log', 
+        maxBytes=10240000,  # 10MB
+        backupCount=10
+    )
+    
+    # 设置日志格式
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    
+    # 设置日志级别
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('Application startup')
+
+
 
 # from models import Person
 
@@ -29,6 +60,9 @@ static_file_dir = os.path.join(os.path.dirname(
 # Initialize Flask application
 app = Flask(__name__)
 app.debug = True
+
+# 在创建 app 后调用
+setup_logger(app)
 
 # 禁用URL末尾的斜杠强制要求
 # Disable strict slashes requirement for URLs
@@ -55,7 +89,7 @@ CORS(app,
      supports_credentials=True,
      resources={
          r"/api/*": {
-             "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+             "origins": ["http://localhost:3000", "http://127.0.0.1:3000", "http://129.211.171.118:8461"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
              "expose_headers": ["Content-Type", "Authorization", "Set-Cookie"],
