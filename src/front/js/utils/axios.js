@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// 统一使用 localhost
 const backendUrl = 'http://localhost:3001';
 
 // 创建自定义的 axios 实例
