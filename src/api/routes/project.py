@@ -625,4 +625,95 @@ def delete_price_config():
         return success_response()
     except Exception as e:
         print(f"[事务回滚] 删除价格配置失败：{str(e)}")
-        raise 
+        raise
+
+@project.route('/profit/export', methods=['POST'])
+@login_required
+def export_project_profit():
+    """导出项目利润数据"""
+    data = request.get_json()
+    
+    try:
+        # 获取项目信息
+        project = ProjectInfo.query.filter_by(
+            project_name=data['project_name'],
+            is_deleted=0
+        ).first()
+        
+        if not project:
+            return error_response(ErrorCode.PROJECT_NOT_FOUND)
+
+        # 获取分组字段
+        group_by = data.get('group_by', ['province', 'city', 'carrier'])
+        
+        # 构建查询字段
+        select_fields = []
+        group_by_fields = []
+        
+        # 动态添加分组字段
+        if 'province' in group_by:
+            select_fields.append(Order.destination_province.label('province'))
+            group_by_fields.append(Order.destination_province)
+        else:
+            select_fields.append(db.literal('全部').label('province'))
+            
+        if 'city' in group_by:
+            select_fields.append(Order.destination_city.label('city'))
+            group_by_fields.append(Order.destination_city)
+        else:
+            select_fields.append(db.literal('全部').label('city'))
+            
+        if 'carrier' in group_by:
+            select_fields.append(Order.carrier_name.label('carrier'))
+            group_by_fields.append(Order.carrier_name)
+        else:
+            select_fields.append(db.literal('全部').label('carrier'))
+        
+        # 添加聚合字段
+        select_fields.extend([
+            db.func.sum(Order.weight).label('weight'),
+            db.func.sum(Order.amount).label('income'),
+            db.func.sum(Order.carrier_fee).label('expense'),
+            db.func.sum(Order.amount - Order.carrier_fee).label('profit')
+        ])
+
+        # 构建基础查询
+        query = db.session.query(*select_fields).filter(
+            Order.project_id == project.id,
+            Order.carrier_type != None,
+            Order.is_deleted == 0
+        )
+
+        # 添加筛选条件
+        if data.get('destination_province'):
+            query = query.filter(Order.destination_province == data['destination_province'])
+        if data.get('destination_city'):
+            query = query.filter(Order.destination_city == data['destination_city'])
+        if data.get('carriers'):
+            query = query.filter(Order.carrier_name.in_(data['carriers']))
+
+        # 添加分组
+        if group_by_fields:
+            query = query.group_by(*group_by_fields)
+
+        # 获取所有数据
+        items = query.all()
+        
+        # 转换为字典列表
+        result = [{
+            'province': item.province,
+            'city': item.city,
+            'carrier': item.carrier or '-',
+            'weight': float(item.weight or 0),
+            'income': float(item.income or 0),
+            'expense': float(item.expense or 0),
+            'profit': float(item.profit or 0)
+        } for item in items]
+
+        return success_response({
+            'items': result
+        })
+
+    except Exception as e:
+        print(f"导出项目利润数据失败：{str(e)}")
+        return error_response(ErrorCode.INTERNAL_SERVER_ERROR, str(e)) 

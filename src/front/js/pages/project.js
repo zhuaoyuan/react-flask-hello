@@ -1351,6 +1351,51 @@ export const Project = () => {
 												<Button onClick={handleResetProfitFilter}>
 													重置
 												</Button>
+												<Button 
+													icon={<DownloadOutlined />}
+													onClick={async () => {
+														try {
+															const response = await axios.post('/api/project/profit/export', {
+																project_name: currentProject.project_name,
+																destination_province: profitFilterForm.getFieldValue('destination_province'),
+																destination_city: profitFilterForm.getFieldValue('destination_city'),
+																carriers: profitFilterForm.getFieldValue('carriers'),
+																group_by: groupByFields
+															});
+
+															if (response.data.success) {
+																const profitData = response.data.result.items;
+																const wb = XLSX.utils.book_new();
+																const exportData = profitData.map(item => ({
+																	'到达省': item.province,
+																	'到达市': item.city,
+																	'承运人': item.carrier,
+																	'重量（吨）': item.weight,
+																	'收入（元）': item.income,
+																	'支出（元）': item.expense,
+																	'利润（元）': item.profit
+																}));
+																const ws = XLSX.utils.json_to_sheet(exportData);
+																
+
+																
+																// 将工作表添加到工作簿
+																XLSX.utils.book_append_sheet(wb, ws, '利润表');
+																
+																// 下载文件
+																XLSX.writeFile(wb, `${currentProject.project_name}_利润表.xlsx`);
+																message.success('导出成功');
+															} else {
+																message.error(response.data.error_message || '导出失败');
+															}
+														} catch (error) {
+															console.error('导出失败:', error);
+															message.error('导出失败');
+														}
+													}}
+												>
+													导出
+												</Button>
 											</Space>
 										</Form.Item>
 									</Col>
