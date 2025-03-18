@@ -162,87 +162,115 @@ def import_orders():
     
     try:
         print(f"[事务开始] 导入订单，数据量：{len(data['orders'])}")
+        
+        # 1. 一次性获取项目信息和价格配置
         project = ProjectInfo.query.filter_by(id=data['project_id'], is_deleted=0).first()
         if not project:
             return error_response(ErrorCode.BAD_REQUEST, '项目不存在')
         if project.project_name != data['project_name']:
             return error_response(ErrorCode.BAD_REQUEST, '项目ID与项目名称不匹配')
 
+        # 2. 一次性获取所有价格配置并建立索引
         price_configs = ProjectPriceConfig.query.filter_by(project_id=project.id, is_deleted=0).all()
         if not price_configs:
             return error_response(ErrorCode.BAD_REQUEST, '项目未配置价格')
 
-        price_config_dict = {}
-        for config in price_configs:
-            key = f"{config.departure_province}-{config.departure_city}-{config.destination_province}-{config.destination_city}"
-            price_config_dict[key] = config.unit_price
+        price_config_dict = {
+            f"{config.departure_province}-{config.departure_city}-{config.destination_province}-{config.destination_city}": config.unit_price
+            for config in price_configs
+        }
 
-        # 预处理：获取所有涉及的订单号的最大序号
+        # 3. 一次性获取所有现有订单号的最大序号
         order_numbers = {order_data['order_number'] for order_data in data['orders']}
-        max_seq_dict = {}
-        for order_number in order_numbers:
-            # 查询数据库中该订单号下最大的序号，添加行锁防止并发导入
-            max_seq = 0
-            existing_orders = Order.query.filter(
-                Order.sub_order_number.like(f"{order_number}-%")
-            ).with_for_update().all()
-            for order in existing_orders:
-                try:
-                    seq = int(order.sub_order_number.split('-')[-1])
-                    max_seq = max(max_seq, seq)
-                except ValueError:
-                    continue
-            max_seq_dict[order_number] = max_seq
+        
+        # 获取每个订单号的最大序号
+        existing_orders_query = db.session.query(
+            Order.order_number,
+            db.func.max(Order.seq).label('max_seq')
+        ).filter(
+            Order.order_number.in_(order_numbers),
+        ).group_by(
+            Order.order_number
+        ).with_for_update()
 
+        # 打印SQL语句用于调试
+        print(f"[DEBUG] SQL Query: {existing_orders_query}")
+
+        # 初始化最大序号字典
+        max_seq_dict = {
+            order_number: 0 for order_number in order_numbers
+        }
+        for order_number, max_seq in existing_orders_query.all():
+            max_seq_dict[order_number] = max_seq or 0
+
+        print(f"[DEBUG] 获取到的最大序号字典: {max_seq_dict}")  # 添加调试日志
+
+        # 4. 批量处理订单数据
         new_orders = []
         errors = []
-        for index, order_data in enumerate(data['orders']):
-            # 验证必填字段
-            if not order_data.get('departure_province') or not order_data.get('departure_city') or \
-               not order_data.get('destination_province') or not order_data.get('destination_city'):
-                errors.append(f"第{index + 1}行：出发地和到达地的省市信息不能为空")
+        
+        # 预处理：创建验证字段集合
+        required_fields = {'departure_province', 'departure_city', 'destination_province', 'destination_city'}
+        
+        for index, order_data in enumerate(data['orders'], 1):
+            # 快速验证必填字段
+            missing_fields = required_fields - set(filter(None, order_data.keys()))
+            if missing_fields:
+                errors.append(f"第{index}行：{', '.join(missing_fields)}不能为空")
                 continue
 
             route_key = f"{order_data['departure_province']}-{order_data['departure_city']}-{order_data['destination_province']}-{order_data['destination_city']}"
             
-            if route_key not in price_config_dict:
-                errors.append(f"第{index + 1}行：出发地（{order_data['departure_province']}{order_data['departure_city']}）到达地（{order_data['destination_province']}{order_data['destination_city']}）的价格配置不存在")
+            unit_price = price_config_dict.get(route_key)
+            if unit_price is None:
+                errors.append(f"第{index}行：出发地（{order_data['departure_province']}{order_data['departure_city']}）到达地（{order_data['destination_province']}{order_data['destination_city']}）的价格配置不存在")
                 continue
 
-            unit_price = price_config_dict[route_key]
-            amount = float(order_data['weight']) * unit_price
+            # 计算金额
+            try:
+                amount = float(order_data['weight']) * unit_price
+            except (ValueError, TypeError):
+                errors.append(f"第{index}行：重量必须是有效的数字")
+                continue
 
-            # 生成子订单号，使用内存中维护的序号
+            # 生成子订单号
             order_number = order_data['order_number']
             max_seq_dict[order_number] += 1
-            sub_order_number = f"{order_number}-{max_seq_dict[order_number]}"
+            seq = max_seq_dict[order_number]
+            sub_order_number = f"{order_number}-{seq}"
 
-            new_order = Order(
-                project_id=project.id,
-                project_name=project.project_name,
-                order_number=order_data['order_number'],
-                sub_order_number=sub_order_number,
-                order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
-                delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
-                product_name=order_data['product_name'],
-                quantity=order_data['quantity'],
-                weight=order_data['weight'],
-                departure_province=order_data['departure_province'],
-                departure_city=order_data['departure_city'],
-                destination_province=order_data['destination_province'],
-                destination_city=order_data['destination_city'],
-                destination_address=order_data.get('destination_address'),
-                remark=order_data.get('remark'),
-                amount=amount
-            )
-            new_orders.append(new_order)
+            try:
+                new_order = Order(
+                    project_id=project.id,
+                    project_name=project.project_name,
+                    order_number=order_number,
+                    sub_order_number=sub_order_number,
+                    seq=seq,  # 添加seq字段
+                    order_date=datetime.strptime(order_data['order_date'], '%Y-%m-%d').date(),
+                    delivery_date=datetime.strptime(order_data['delivery_date'], '%Y-%m-%d').date(),
+                    product_name=order_data['product_name'],
+                    quantity=order_data['quantity'],
+                    weight=order_data['weight'],
+                    departure_province=order_data['departure_province'],
+                    departure_city=order_data['departure_city'],
+                    destination_province=order_data['destination_province'],
+                    destination_city=order_data['destination_city'],
+                    destination_address=order_data.get('destination_address'),
+                    remark=order_data.get('remark'),
+                    amount=amount
+                )
+                new_orders.append(new_order)
+            except (ValueError, TypeError) as e:
+                errors.append(f"第{index}行：数据格式错误 - {str(e)}")
+                continue
 
         if errors:
             return error_response(ErrorCode.BAD_REQUEST, '\n'.join(errors))
         
         if new_orders:
             print(f"[事务处理] 准备保存{len(new_orders)}个新订单")
-            db.session.add_all(new_orders)
+            # 5. 使用批量插入优化
+            db.session.bulk_save_objects(new_orders)
             print("[事务完成] 订单导入成功")
             return success_response({'imported_count': len(new_orders)})
         else:

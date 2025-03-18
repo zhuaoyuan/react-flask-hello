@@ -105,6 +105,7 @@ class Order(db.Model):
     project_name = db.Column(db.String(255), nullable=False, comment='项目名称')
     order_number = db.Column(db.String(50), nullable=False, unique=True, comment='订单号')
     sub_order_number = db.Column(db.String(60), nullable=False, unique=True, comment='子订单号')
+    seq = db.Column(db.Integer, nullable=False, default=0, comment='子订单序号')
     order_date = db.Column(db.Date, nullable=False, comment='下单日期')
     delivery_date = db.Column(db.Date, nullable=False, comment='发货日期')
     product_name = db.Column(db.String(255), nullable=False, comment='产品名称')
@@ -136,6 +137,7 @@ class Order(db.Model):
             'project_name': self.project_name,
             'order_number': self.order_number,
             'sub_order_number': self.sub_order_number,
+            'seq': self.seq,
             'order_date': self.order_date.isoformat() if self.order_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
             'product_name': self.product_name,
