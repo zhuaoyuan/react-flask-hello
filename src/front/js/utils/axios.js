@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const backendUrl = 'http://localhost:3001';
+// 从环境变量获取后端URL，如果未设置则使用默认值
+const backendUrl = process.env.MY_BACKEND_URL  || 'http://localhost:3001';
+console.log(process.env.MY_BACKEND_URL); // 输出：http://localhost:3001
 
 // 创建自定义的 axios 实例
 const axiosInstance = axios.create({

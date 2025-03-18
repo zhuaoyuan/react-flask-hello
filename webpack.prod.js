@@ -9,7 +9,8 @@ module.exports = merge(common, {
     plugins: [
         new Dotenv({
             safe: true,
-            systemvars: true
+            systemvars: true,
+            path: '.env'
         })
     ]
 });
