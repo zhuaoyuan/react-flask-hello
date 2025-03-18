@@ -7,6 +7,45 @@ import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
 
+// 添加日期解析函数
+const parseExcelDate = (dateValue) => {
+    try {
+        // 如果已经是标准日期字符串，直接返回
+        if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+            return dateValue;
+        }
+
+        // 如果是数字（Excel日期格式），转换为日期
+        if (typeof dateValue === 'number') {
+            // Excel的日期是从1900年1月1日开始的天数
+            // 注意：Excel有一个bug，它认为1900年是闰年
+            const excelEpoch = new Date(1900, 0, 1);
+            let days = Math.floor(dateValue);
+            // 处理Excel的1900年闰年bug
+            if (days > 59) { // 1900年2月29日之后
+                days -= 1;
+            }
+            const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000);
+            return dayjs(date).format('YYYY-MM-DD');
+        }
+
+        // 如果是日期对象，直接格式化
+        if (dateValue instanceof Date) {
+            return dayjs(dateValue).format('YYYY-MM-DD');
+        }
+
+        // 尝试解析其他格式的日期字符串
+        const parsedDate = dayjs(dateValue);
+        if (parsedDate.isValid()) {
+            return parsedDate.format('YYYY-MM-DD');
+        }
+
+        throw new Error(`不支持的日期格式: ${dateValue}`);
+    } catch (error) {
+        throw new Error(`日期解析失败: ${error.message}`);
+    }
+};
+
 export const Order = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
@@ -301,21 +340,29 @@ export const Order = () => {
                     if (!row['送达市']) errors.push(`第${rowNum}行：送达市不能为空`);
                     if (!row['送达详细地址']) errors.push(`第${rowNum}行：送达详细地址不能为空`);
 
-                    return {
-                        order_number: row['订单号'],
-                        order_date: row['下单日期'],
-                        delivery_date: row['送货日期'],
-                        product_name: row['产品名称'],
-                        quantity: parseInt(row['数量']),
-                        weight: parseFloat(row['重量(吨)']),
-                        departure_province: row['出发省'],
-                        departure_city: row['出发市'],
-                        destination_province: row['送达省'],
-                        destination_city: row['送达市'],
-                        destination_address: row['送达详细地址'],
-                        remark: row['备注']
-                    };
+                    try {
+                        return {
+                            order_number: row['订单号'],
+                            order_date: parseExcelDate(row['下单日期']),
+                            delivery_date: parseExcelDate(row['送货日期']),
+                            product_name: row['产品名称'],
+                            quantity: parseInt(row['数量']),
+                            weight: parseFloat(row['重量(吨)']),
+                            departure_province: row['出发省'],
+                            departure_city: row['出发市'],
+                            destination_province: row['送达省'],
+                            destination_city: row['送达市'],
+                            destination_address: row['送达详细地址'],
+                            remark: row['备注']
+                        };
+                    } catch (error) {
+                        errors.push(`第${rowNum}行：${error.message}`);
+                        return null;
+                    }
                 });
+
+                // 过滤掉解析失败的订单
+                const validOrders = orders.filter(order => order !== null);
 
                 // 如果有错误，显示错误信息并终止导入
                 if (errors.length > 0) {
@@ -340,7 +387,7 @@ export const Order = () => {
                 }
 
                 const response = await axios.post('/api/order/import', {
-                    orders: orders,
+                    orders: validOrders,
                     project_id: selectedProject.value,
                     project_name: selectedProject.project_name
                 });
