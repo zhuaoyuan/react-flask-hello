@@ -384,14 +384,52 @@ def upload_project_price_config():
     updated_prices = []
     error_messages = []
 
+    # 收集所有需要查询的项目ID和名称
+    project_ids = set()
+    project_names = set()
+    for price in price_data.get('upload_list'):
+        project_ids.add(price['project_id'])
+        project_names.add(price['project_name'])
+
+    # 批量查询所有相关项目
+    projects = ProjectInfo.query.filter(
+        ProjectInfo.id.in_(list(project_ids)),
+        ProjectInfo.project_name.in_(list(project_names)),
+        ProjectInfo.is_deleted == 0
+    ).with_for_update().all()
+
+    # 创建项目查找字典 (project_id, project_name) -> project
+    project_dict = {(p.id, p.project_name): p for p in projects}
+
+    # 收集所有价格配置的关键信息用于批量查询
+    price_keys = []
+    for price in price_data.get('upload_list'):
+        price_keys.append((
+            price['project_id'],
+            price['departure_province'],
+            price['departure_city'],
+            price['destination_province'],
+            price['destination_city']
+        ))
+
+    # 批量查询现有的价格配置
+    existing_prices = ProjectPriceConfig.query.filter(
+        db.and_(
+            ProjectPriceConfig.project_id.in_([pk[0] for pk in price_keys]),
+            ProjectPriceConfig.is_deleted == 0
+        )
+    ).with_for_update().all()
+
+    # 创建价格配置查找字典
+    price_config_dict = {
+        (p.project_id, p.departure_province, p.departure_city, p.destination_province, p.destination_city): p 
+        for p in existing_prices
+    }
+
     for index, price in enumerate(price_data.get('upload_list')):
-        project = ProjectInfo.query.filter_by(
-            id=price['project_id'],
-            project_name=price['project_name'],
-            is_deleted=0
-        ).with_for_update().first()
-        
         sheet_index = index + 2
+        project_key = (price['project_id'], price['project_name'])
+        project = project_dict.get(project_key)
 
         if not project:
             error_messages.append(f"第{sheet_index}行：项目不存在")
@@ -408,15 +446,9 @@ def upload_project_price_config():
             error_messages.append(f"第{sheet_index}行：出发地和到达地的省市信息不能为空")
             continue
 
-        # 查找是否存在相同的价格配置
-        existing_price = ProjectPriceConfig.query.filter_by(
-            project_id=price['project_id'],
-            departure_province=departure_province,
-            departure_city=departure_city,
-            destination_province=destination_province,
-            destination_city=destination_city,
-            is_deleted=0
-        ).with_for_update().first()
+        # 使用字典查找现有价格配置
+        price_key = (price['project_id'], departure_province, departure_city, destination_province, destination_city)
+        existing_price = price_config_dict.get(price_key)
 
         if existing_price:
             # 更新已存在的价格配置
@@ -444,8 +476,14 @@ def upload_project_price_config():
 
         # 批量更新和新增
         if updated_prices:
-            for price in updated_prices:
-                db.session.add(price)
+            # 将更新列表转换为字典列表格式
+            update_mappings = [{
+                'id': price.id,
+                'unit_price': price.unit_price
+            } for price in updated_prices]
+            # 执行批量更新
+            db.session.bulk_update_mappings(ProjectPriceConfig, update_mappings)
+            
         if new_prices:
             db.session.add_all(new_prices)
 
